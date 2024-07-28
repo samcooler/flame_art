@@ -5,7 +5,9 @@
 #include <WiFiUdp.h>
 
 // From "OSC" library in Arduino. You can find it by searching for "Open Sound Control" in library manager.
+#include <OSCBundle.h>
 #include <OSCMessage.h>
+#include <OSCTiming.h>
 
 #define BNO08X_RESET -1
 
@@ -29,6 +31,8 @@ char PASS[] = "curvelight";
 
 WiFiUDP udp;
 
+IPAddress targetIpAddress(192, 168, 13, 255);
+
 void setup(void)
 {
   Serial.begin(115200);
@@ -47,23 +51,8 @@ void setup(void)
     }
   }
 
-  int checkCount = 0;
-  while (WiFi.status() != WL_CONNECTED)
-  {
-    if (checkCount <= 0)
-    {
-      Serial.print("Trying to connect to SSID: ");
-      Serial.println(SSID);
-
-      WiFi.begin(SSID, PASS);
-      WiFi.config(ip, gateway, subnet);
-      checkCount = 25;
-    }
-
-    delay(400);
-    checkCount--;
-  }
-  Serial.println("Connected to wifi");
+  Serial.println(" calling initial wificonnect in setup");
+  wifiConnect();
   printWiFiStatus();
 
   if (!bno08x.begin_I2C())
@@ -99,6 +88,32 @@ void setup(void)
   delay(100);
 }
 
+void wifiConnect(void) {
+  int checkCount = 0;
+
+  WiFi.config(ip, gateway, subnet);
+  WiFi.begin(SSID, PASS);
+
+  Serial.print(" CONNECTING TO WIFI ");
+  Serial.println(SSID);
+
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    // Print connecting message once a second, is all
+    if (checkCount <= 0)
+    {
+      Serial.println("still connecting to wifi ");
+      checkCount = 100;
+    }
+
+    delay(10);
+    checkCount--;
+  }
+
+  Serial.println("Connected to wifi");
+
+}
+
 void printWiFiStatus()
 {
   Serial.print("SSID: ");
@@ -131,94 +146,174 @@ void tellBnoWhatReportsWeWant(void)
   }
 }
 
+void dumpSensorValue( sh2_SensorValue_t *sv) {
+  Serial.print("sensorId: "); Serial.println(sv->sensorId);
+
+  switch(sv->sensorId) {
+    case SH2_GRAVITY:
+      Serial.print("Gravity - x: ");
+      Serial.println(sv->un.gravity.x);
+      Serial.print(" y: ");
+      Serial.print(sv->un.gravity.y);
+      Serial.print(" z: ");
+      Serial.println(sv->un.gravity.z);
+      break;
+
+    case SH2_GAME_ROTATION_VECTOR:
+      Serial.print("Game Rotation Vector - r: ");
+      Serial.print(sv->un.gameRotationVector.real);
+      Serial.print(" i: ");
+      Serial.print(sv->un.gameRotationVector.i);
+      Serial.print(" j: ");
+      Serial.print(sv->un.gameRotationVector.j);
+      Serial.print(" k: ");
+      Serial.println(bnoSensorValue.un.gameRotationVector.k);
+      break;
+
+    case SH2_GYROSCOPE_CALIBRATED:
+      Serial.print("Gyroscope Vector - x: ");
+      Serial.print(bnoSensorValue.un.gyroscope.x);
+      Serial.print(" y: ");
+      Serial.print(bnoSensorValue.un.gyroscope.y);
+      Serial.print(" z: ");
+      Serial.println(bnoSensorValue.un.gyroscope.z);
+      break;
+
+    default:
+      Serial.print(" unexpected sensor type");
+  }
+}
+
+float gravity_x = 0.0;
+float gravity_y = 0.0;
+float gravity_z = 0.0;
+
+float rotation_x = 0.0;
+float rotation_y = 0.0;
+float rotation_z = 0.0;
+
+float gyro_x = 0.0;
+float gyro_y = 0.0;
+float gyro_z = 0.0;
+
+unsigned long last_send = 0;
+
+const unsigned long MAX_LONG = 0xFFFFFFFF;
+const unsigned long MAX_LONG_MILLI = 4294967;
+const int ms_between_packets = 50;
+const int USE_BUNDLE = 1;
+
 void loop()
 {
-  delay(100);
 
-  if (bno08x.wasReset())
-  {
+  yield(); // needed?
+
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println(" WIFI DISCONNECTED RECONNECTING from loop ");
+    wifiConnect();
+    return;
+  }
+
+  if (bno08x.wasReset())  {
     Serial.print("Sensor was reset - ");
     tellBnoWhatReportsWeWant();
   }
 
-  if (!bno08x.getSensorEvent(&bnoSensorValue))
-  {
-    return;
-  }
+  if (bno08x.getSensorEvent(&bnoSensorValue)) {
 
-  IPAddress targetIpAddress(192, 168, 13, 255);
-  switch (bnoSensorValue.sensorId)
-  {
-  case SH2_GRAVITY:
-  {
-    Serial.print("Gravity - x: ");
-    Serial.print(bnoSensorValue.un.gravity.x);
-    Serial.print(" y: ");
-    Serial.print(bnoSensorValue.un.gravity.y);
-    Serial.print(" z: ");
-    Serial.println(bnoSensorValue.un.gravity.z);
+    // dumpSensorValue( &bnoSensorValue );
 
-    OSCMessage msg("/LC/gravity");
+    switch (bnoSensorValue.sensorId) {
+      case SH2_GRAVITY:
+        gravity_x = bnoSensorValue.un.gravity.x;
+        gravity_y = bnoSensorValue.un.gravity.y;
+        gravity_z = bnoSensorValue.un.gravity.z;
+        break;
 
-    msg.add(bnoSensorValue.un.gravity.x);
-    msg.add(bnoSensorValue.un.gravity.y);
-    msg.add(bnoSensorValue.un.gravity.z);
+      case SH2_GAME_ROTATION_VECTOR:
+        rotation_x = bnoSensorValue.un.gameRotationVector.i;
+        rotation_y = bnoSensorValue.un.gameRotationVector.j;
+        rotation_z = bnoSensorValue.un.gameRotationVector.k;
+        break;
+      
+      case SH2_GYROSCOPE_CALIBRATED:
+        gyro_x = bnoSensorValue.un.gyroscope.x;
+        gyro_y = bnoSensorValue.un.gyroscope.y;
+        gyro_z = bnoSensorValue.un.gyroscope.z;
+        break;
 
+    }; // switch sensorId
+
+  };
+
+  // every so often send a packet
+  unsigned long now = millis();
+  if (last_send < now - ms_between_packets) {
+    last_send = now;
+
+#if 1
+    // build the bundle? Bundles seem to work poorly
+
+    OSCBundle bundle;
+
+    // OSC time is definitionally in NTP time which is UTC, but that's impractical on a device like this
+    osctime_t osc_time;
+    osc_time.seconds = now / 1000;
+    osc_time.fractionofseconds = ( now % 1000 ) * MAX_LONG_MILLI; 
+    bundle.setTimetag(osc_time);
+
+    OSCMessage grav_msg ("/LC/gravity");
+    grav_msg.add(gravity_x);
+    grav_msg.add(gravity_y);
+    grav_msg.add(gravity_z);
+    bundle.add(grav_msg);
+
+    OSCMessage rot_msg ("/LC/rotation");
+    rot_msg.add(rotation_x);
+    rot_msg.add(rotation_y);
+    rot_msg.add(rotation_z);
+    bundle.add(rot_msg);
+
+    OSCMessage gyro_msg ("/LC/gyro");
+    gyro_msg.add(gyro_x);
+    gyro_msg.add(gyro_y);
+    gyro_msg.add(gyro_z);
+    bundle.add(gyro_msg);
+
+    // send the bundle
     udp.beginPacket(targetIpAddress, 6511);
-    msg.send(udp);
+    bundle.send(udp);
     udp.endPacket();
-    udp.beginPacket(targetIpAddress, 6512);
-    msg.send(udp);
-    udp.endPacket();
-  }
-  break;
-  case SH2_GAME_ROTATION_VECTOR:
-  {
-    Serial.print("Game Rotation Vector - r: ");
-    Serial.print(bnoSensorValue.un.gameRotationVector.real);
-    Serial.print(" i: ");
-    Serial.print(bnoSensorValue.un.gameRotationVector.i);
-    Serial.print(" j: ");
-    Serial.print(bnoSensorValue.un.gameRotationVector.j);
-    Serial.print(" k: ");
-    Serial.println(bnoSensorValue.un.gameRotationVector.k);
+    //udp.beginPacket(targetIpAddress, 6512);
+    //bundle.send(udp);
+    //udp.endPacket();
 
-    OSCMessage msg("/LC/rotation");
+#else
 
-    msg.add(bnoSensorValue.un.gameRotationVector.i);
-    msg.add(bnoSensorValue.un.gameRotationVector.j);
-    msg.add(bnoSensorValue.un.gameRotationVector.k);
+    OSCMessage imu_msg("/LC/imu");
+    imu_msg.add((unsigned int) now); //unsigned long confuse the library
+    imu_msg.add(rotation_x);
+    imu_msg.add(rotation_y);
+    imu_msg.add(rotation_z);
+    imu_msg.add(gravity_x);
+    imu_msg.add(gravity_y);
+    imu_msg.add(gravity_z);
+    imu_msg.add(gyro_x);
+    imu_msg.add(gyro_y);
+    imu_msg.add(gyro_z);
 
+    // send the bundle
     udp.beginPacket(targetIpAddress, 6511);
-    msg.send(udp);
+    imu_msg.send(udp);
     udp.endPacket();
-    udp.beginPacket(targetIpAddress, 6512);
-    msg.send(udp);
-    udp.endPacket();
-  }
-  break;
-  case SH2_GYROSCOPE_CALIBRATED:
-  {
-    Serial.print("Gyroscope Vector - x: ");
-    Serial.print(bnoSensorValue.un.gyroscope.x);
-    Serial.print(" y: ");
-    Serial.print(bnoSensorValue.un.gyroscope.y);
-    Serial.print(" z: ");
-    Serial.println(bnoSensorValue.un.gyroscope.z);
 
-    OSCMessage msg("/LC/gyro");
+    // only if you need to send to a second port on the same machine
+    //udp.beginPacket(targetIpAddress, 6512);
+    //bundle.send(udp);
+    //udp.endPacket();
 
-    msg.add(bnoSensorValue.un.gyroscope.x);
-    msg.add(bnoSensorValue.un.gyroscope.y);
-    msg.add(bnoSensorValue.un.gyroscope.z);
+#endif
 
-    udp.beginPacket(targetIpAddress, 6511);
-    msg.send(udp);
-    udp.endPacket();
-    udp.beginPacket(targetIpAddress, 6512);
-    msg.send(udp);
-    udp.endPacket();
   }
-  break;
-  }
+
 }
