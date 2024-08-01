@@ -151,8 +151,8 @@ void dumpSensorValue( sh2_SensorValue_t *sv) {
 
   switch(sv->sensorId) {
     case SH2_GRAVITY:
-      Serial.print("Gravity - x: ");
-      Serial.println(sv->un.gravity.x);
+      Serial.print("SensorEvent: Gravity - x: ");
+      Serial.print(sv->un.gravity.x);
       Serial.print(" y: ");
       Serial.print(sv->un.gravity.y);
       Serial.print(" z: ");
@@ -160,7 +160,7 @@ void dumpSensorValue( sh2_SensorValue_t *sv) {
       break;
 
     case SH2_GAME_ROTATION_VECTOR:
-      Serial.print("Game Rotation Vector - r: ");
+      Serial.print("SensorEvent: Game Rotation Vector - r: ");
       Serial.print(sv->un.gameRotationVector.real);
       Serial.print(" i: ");
       Serial.print(sv->un.gameRotationVector.i);
@@ -171,7 +171,7 @@ void dumpSensorValue( sh2_SensorValue_t *sv) {
       break;
 
     case SH2_GYROSCOPE_CALIBRATED:
-      Serial.print("Gyroscope Vector - x: ");
+      Serial.print("SensorEvent: Gyroscope Vector - x: ");
       Serial.print(bnoSensorValue.un.gyroscope.x);
       Serial.print(" y: ");
       Serial.print(bnoSensorValue.un.gyroscope.y);
@@ -302,7 +302,16 @@ void loop()
     imu_msg.add(gyro_y);
     imu_msg.add(gyro_z);
 
-    // send the bundle
+#if 0
+    Serial.print("transmit: rotation: x: ");
+    Serial.print(rotation_x);
+    Serial.print(" y: ");
+    Serial.print(rotation_y);
+    Serial.print(" z: ");
+    Serial.println(rotation_z);
+#endif
+
+    // send the packet
     udp.beginPacket(targetIpAddress, 6511);
     imu_msg.send(udp);
     udp.endPacket();
