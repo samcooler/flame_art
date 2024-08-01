@@ -251,7 +251,7 @@ void loop()
   if (last_send < now - ms_between_packets) {
     last_send = now;
 
-#if 1
+#if 0
     // build the bundle? Bundles seem to work poorly
 
     OSCBundle bundle;
