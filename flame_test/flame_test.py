@@ -332,6 +332,7 @@ def osc_handler_imu(address: str, fixed_args: List[Any], *vals):
     lc_state.s.rotation = vals[1:4]
     lc_state.s.gravity = vals[4:7]
     lc_state.s.gyro = vals[7:10]
+    print(f'OSC IMU: rot {vals[1]:.4f}, {vals[2]:.4f}, {vals[3]:.4f}, grav {vals[4]:.4f}, {vals[5]:.4f}, {vals[6]:.4f} gyro {vals[7]:.4f}, {vals[8]:.4f}, {vals[9]:.4f}  ') if lc_state.debug else None
     print(f'OSC IMU: rot {vals[1]:.4f}, {vals[2]:.4f}, {vals[3]:.4f}, grav {vals[4]:.4f}, {vals[5]:.4f}, {vals[6]:.4f} gyro {vals[7]:.4f}, {vals[8]:.4f}, {vals[9]:.4f}  ') 
 
 
