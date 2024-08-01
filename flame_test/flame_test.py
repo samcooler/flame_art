@@ -324,11 +324,16 @@ def osc_handler_gravity(address: str, fixed_args: List[Any], *vals):
 # rotation, gravity, gyro
 
 def osc_handler_imu(address: str, fixed_args: List[Any], *vals):
-    print(f'handler received IMU: time {vals[0]} rot {vals[1:4]}, grav {vals[4:7]}, gyro {vals[7:10]} ')
+    # print(f'handler received IMU: time {vals[0]} rot {vals[1:4]}, grav {vals[4:7]}, gyro {vals[7:10]} ') if lc_state.debug else None
+    if len(vals) != 10:
+        print(f'IMU: wrong number parameters should be 10 is: {len(vals) }')
+        return
     lc_state = fixed_args[0]
     lc_state.s.rotation = vals[1:4]
     lc_state.s.gravity = vals[4:7]
     lc_state.s.gyro = vals[7:10]
+    print(f'OSC IMU: rot {vals[1]:.4f}, {vals[2]:.4f}, {vals[3]:.4f}, grav {vals[4]:.4f}, {vals[5]:.4f}, {vals[6]:.4f} gyro {vals[7]:.4f}, {vals[8]:.4f}, {vals[9]:.4f}  ') 
+
 
 def osc_handler_nozzles(address: str, fixed_args: List[Any], *vals):
     print(f' osc: nozzles {vals}') if lc_state.debug else None
@@ -367,7 +372,7 @@ def osc_server(lc_state: LightCurveState, address: str):
     dispatcher = Dispatcher()
 
     # setting up a catch-all can be good for debugging
-    dispatcher.map('*', osc_handler_all, lc_state)
+    # dispatcher.map('*', osc_handler_all, lc_state)
 
     # setting individual methods for each, slightly more efficient - but won't get timestamp bundles -
     # so disabling if we're using bundles
