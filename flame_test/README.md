@@ -7,6 +7,17 @@ with 10 flame jets.
 
 It also can be used with the simulator.
 
+# use
+
+## installation
+
+Install a recent python. Tested with 3.12.
+
+Install the necessary python packages. `pip install -r requirements.txt`
+
+On windows, you may need to required the C++ build tools in order to get the tools `netifaces`  requires. This can be done through `choco install visualcpp-build-tools` or by installing Visual Studio Code, and installing the C++ package, and correctly adding to path.
+
+
 # Art Net Definition
 
 Each controller expresses 10 devices, which in ArtNet terms are Fixtures.

@@ -29,18 +29,33 @@ import socket
 from time import sleep, time
 import argparse
 import json
-from threading import Thread, Event
+from multiprocessing import Process, Event, Manager
+import asyncio
 import math
 
-from osc4py3.as_eventloop import *
-from osc4py3 import oscbuildparse
-from osc4py3 import oscmethod as osm
+#from osc4py3.as_eventloop import *
+#from osc4py3 import oscbuildparse
+#from osc4py3 import oscmethod as osm
+
+# let's use the AsyncIO call structure from osc_server
+from pythonosc.dispatcher import Dispatcher
+from pythonosc.osc_server import BlockingOSCUDPServer
+
+from pythonosc import osc_server
+
 import netifaces
+import importlib
 
 import glob 
-import importlib
 import os
 import sys
+
+from typing import List, Any
+
+import logging
+# logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+
 
 OSC_PORT = 6511 # a random number. there is no OSC port because OSC is not a protocol
 
@@ -88,35 +103,94 @@ def _artnet_packet(universe: int, sequence: int, packet: bytearray ):
 
     # print_bytearray(packet)
 
-class LightCurveTransmitter:
+#
+# This is a shared class, across processes. It is shared between processes
+# by simply passing it through the process create. This has the amusing property
+# of creating a new copy of the object, but any fields Managed by multiprocessing
+# are essentially copied by reference. This object, thus, gets initialized only
+# once, but exists in three copies - one in each process - but the shared object
+# is shared.
+#
+# this means values that are in args and never change don't need to be copied
+# into shared, only mutable values need to be constructed in the shared object
+#
+# while this use is terse and rather cute, the construct / copy mechanism
+# between processes becomes a little bit of a footgun. Beware.
 
-    def __init__(self, args) -> None:
+class LightCurveState:
+
+    def __init__(self, args):
+        self.s = Manager().Namespace()
 
         self.controllers = args.controllers
-
         self.nozzles = args.nozzles
-        self.apertures = [0.0] * self.nozzles
-        self.solenoids = [0] * self.nozzles
+
+        s = self.s
+        s.apertures = [0.0] * self.nozzles
+        s.solenoids = [0] * self.nozzles
+
+        # rotational speed around pitch, yaw, roll        
+        s.gyro = [0.0] * 3
+        # absolute rotational position compared to a fixed reference frame
+        s.rotation = [0.0] * 3
+        # the direction in which gravity currently is
+        s.gravity = [0.0] * 3
+
+        s.nozzles_buttons = [False] * NOZZLE_BUTTON_LEN
+        s.control_buttons = [False] * CONTROL_BUTTON_LEN
 
         self.debug = debug
-        self.sequence = 0
+        self.fps = args.fps
+
+        # this is a little bit of a hack because it's not part of the sculpture
+        # state. It is convenient
         self.repeat = args.repeat
         self.fps = args.fps
+
+    # because this is a shared object, I think constructing then setting
+    # is faster than setting one by one
+    def fill_apertures(self, val: float):
+        self.s.apertures = [val] * self.nozzles
+#        for i in range(0,self.s.nozzles):
+#            self.s.apertures[i] = val
+
+    def fill_solenoids(self, val: int):
+        self.s.solenoids = [val] * self.nozzles
+#        for i in range(0,self.s.nozzles):
+#            self.s.solenoids[i] = val
+
+    def print_aperture(self):
+        print(self.s.apertures)
+
+    def print_solenoid(self):
+        print(self.s.solenoids)
+
+
+class LightCurveTransmitter:
+
+    def __init__(self, lc_state: LightCurveState) -> None:
+
+        print('initialize light curve transmitter')
+
+        self.lc_state = lc_state
+        self.sequence = 0
+        # override this if you want just the transmitter debugging
+        self.debug = lc_state.debug
 
         # create outbound socket
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # UDP
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
 
-    # call once to set up 
+    # call each time
     def transmit(self) -> None:
 
         print(f'transmit') if self.debug else None
 
-        for c in self.controllers:
+        for c in self.lc_state.controllers:
 
             # allocate the packet TODO allocate a packet once
-            packet = bytearray( ( self.nozzles * 2) + ARTNET_HEADER_SIZE)
+            packet = bytearray( ( self.lc_state.nozzles * 2) + ARTNET_HEADER_SIZE)
 
             # fill in the artnet part
             _artnet_packet(ARTNET_UNIVERSE, self.sequence, packet)
@@ -127,19 +201,19 @@ class LightCurveTransmitter:
 
                 # validation. Could make optional.
                 if (self.debug and 
-                        ( self.solenoids[i+offset] < 0) or (self.solenoids[i+offset] > 1)):
-                    print(f'active at {i+offset} out of range {self.solenoids[i+offset]} skipping')
+                        ( self.lc_state.s.solenoids[i+offset] < 0) or (self.lc_state.s.solenoids[i+offset] > 1)):
+                    print(f'active at {i+offset} out of range {self.lc_state.s.solenoids[i+offset]} skipping')
                     return
                 if (self.debug and 
-                        (self.apertures[i+offset] < 0.0) or (self.apertures[i+offset] > 1.0)):
-                    print(f'flow at {i+offset} out of range {self.apertures[i+offset]} skipping')
+                        (self.lc_state.s.apertures[i+offset] < 0.0) or (self.lc_state.s.apertures[i+offset] > 1.0)):
+                    print(f'flow at {i+offset} out of range {self.lc_state.s.apertures[i+offset]} skipping')
 
-                if self.apertures[i+offset] < 0.10:
+                if self.lc_state.s.apertures[i+offset] < 0.10:
                     packet[ARTNET_HEADER_SIZE + (i*2) ] = 0
                 else:
-                    packet[ARTNET_HEADER_SIZE + (i*2) ] = self.solenoids[i+offset]
+                    packet[ARTNET_HEADER_SIZE + (i*2) ] = self.lc_state.s.solenoids[i+offset]
 
-                packet[ARTNET_HEADER_SIZE + (i*2) + 1] = math.floor(self.apertures[i+offset] * 255.0 )
+                packet[ARTNET_HEADER_SIZE + (i*2) + 1] = math.floor(self.lc_state.s.apertures[i+offset] * 255.0 )
 
             # transmit
             if self.debug:
@@ -150,19 +224,49 @@ class LightCurveTransmitter:
 
         self.sequence += 1
 
-    def fill_apertures(self, val: float):
-        for i in range(0,self.nozzles):
-            self.apertures[i] = val
 
-    def fill_solenoids(self, val: int):
-        for i in range(0,self.nozzles):
-            self.solenoids[i] = val
+# background 
 
-    def print_aperture(self):
-        print(self.apertures)
+XMIT_EVENT = Event()
 
-    def print_solenoid(self):
-        print(self.solenoids)
+# see comment about lc_state, it is a cross process shared object.
+# this function is a separate process
+
+def transmitter_server(lc_state: LightCurveState, xmit_event: Event):
+
+    xmit = LightCurveTransmitter(lc_state)
+
+    delay = 1.0 / lc_state.fps
+    # print(f'delay is {delay} fps is {xmit.fps}')
+
+    while(True):
+        t1 = time()
+
+        if xmit_event.is_set():
+            xmit.transmit()
+
+        d = delay - (time() - t1)
+        if (d > 0.002):
+            sleep(d)
+
+def transmitter_server_init(lc_state: LightCurveState):
+    global TRANSMITTER_PROCESS, XMIT_EVENT
+
+    print('transmitter server init')
+
+    XMIT_EVENT.set()
+    TRANSMITTER_PROCESS = Process(target=transmitter_server, args=(lc_state, XMIT_EVENT) )
+    TRANSMITTER_PROCESS.daemon = True
+    TRANSMITTER_PROCESS.start()
+
+def transmitter_server_start():
+    global XMIT_EVENT
+    XMIT_EVENT.set()
+
+def transmitter_server_stop():
+    global XMIT_EVENT
+    XMIT_EVENT.clear()
+
 
 # it appears in python when we set up a broadcast listerner
 # we would just listen on 0.0.0.0 so we probably won't need any of this
@@ -189,93 +293,61 @@ def get_interface_addresses():
 # Bundle receiption hasn't worked
 
 # generic handler good for debugging
-def osc_handler_all (address, *args):
-    print(f' osc handler received address {address}; positional arguments: {args}')
+def osc_handler_all (address: str, fixed_args: List[Any], *vals):
+    lc_state = fixed_args[0]
+    print(f' osc handler ALL received address {address} len {len(address)}; positional arguments: {vals}')
 
 # specific handlers good for efficiency
-def osc_handler_gyro(val, osc_receiver):
-    # print(f' osc handler received gyro')
-    osc_receiver.gyro = val
-    print(f' osc: gyro {val}') if osc_receiver.debug else None
+def osc_handler_gyro(address: str, fixed_args: List[Any], *vals):
+    print(f' osc: gyro {vals}') if lc_state.debug else None
+    lc_state = fixed_args[0]
+    if len(vals) != 3:
+        return
+    lc_state.s.gyro = vals
  
-def osc_handler_rotation(val, osc_receiver):
-    # print(f' osc handler received rotation')
-    osc_receiver.rotation = val
-    print(f' osc: rotation {val}') if osc_receiver.debug else None
+def osc_handler_rotation(address: str, fixed_args: List[Any], *vals):
+    print(f' osc: rotation {vals}') if lc_state.debug else None
+    lc_state = fixed_args[0]
+    if len(vals) != 3:
+        return
+    lc_state.s.rotation = vals
 
-def osc_handler_gravity(val, osc_receiver):
-    # print(f' osc handler received gravity')
-    osc_receiver.gravity = val
-    print(f' osc: gravity {val}') if osc_receiver.debug else None
+def osc_handler_gravity(address: str, fixed_args: List[Any], *vals):
+    print(f' osc: gravity {vals}') if lc_state.debug else None
+    lc_state = fixed_args[0]
+    if len(vals) != 3:
+        return
+    lc_state.s.gravity = vals
 
-def osc_handler_nozzles(val, osc_receiver):
-    # print(f' osc nozzles received {val}')
-    osc_receiver.nozzles = val
-    print(f' osc: nozzles {val}') if osc_receiver.debug else None
+# imu order
+# miliseconds int
+# rotation, gravity, gyro
 
-def osc_handler_controls(val, osc_receiver):
-    # print(f' osc controls received {val}')
-    osc_receiver.controls = val
-    print(f' osc: controls {val}') if osc_receiver.debug else None
+def osc_handler_imu(address: str, fixed_args: List[Any], *vals):
+    print(f'handler received IMU: time {vals[0]} rot {vals[1:4]}, grav {vals[4:7]}, gyro {vals[7:10]} ')
+    lc_state = fixed_args[0]
+    lc_state.s.rotation = vals[1:4]
+    lc_state.s.gravity = vals[4:7]
+    lc_state.s.gyro = vals[7:10]
+
+def osc_handler_nozzles(address: str, fixed_args: List[Any], *vals):
+    print(f' osc: nozzles {vals}') if lc_state.debug else None
+    lc_state = fixed_args[0]
+    lc_state.s.nozzles = vals
+
+def osc_handler_controls(address: str, fixed_args: List[Any], *vals):
+    print(f' osc: controls {vals}') if lc_state.debug else None
+    lc_state = fixed_args[0]
+    lc_state.s.controls = vals
 
 
 #this has never worked
-def osc_handler_bundle(address, *args):
+def osc_handler_bundle(address: str, fixed_args: List[Any], *vals):
+    lc_state = fixed_args[0]
     print(f' osc bundle handler received address {address}')
-    print(f' osc handler bundle: args {args}')
+    print(f' osc handler bundle: args {vals}')
 
 
-class OSCReceiver:
-    def __init__(self, args) -> None:
-
-        # rotational speed around pitch, yaw, roll        
-        self.gyro = [0.0] * 3
-        # absolute rotational position compared to a fixed reference frame
-        self.rotation = [0.0] * 3
-        # the direction in which gravity currently is
-        self.gravity = [0.0] * 3
-
-        self.nozzles = [False] * NOZZLE_BUTTON_LEN
-        self.controls = [False] * CONTROL_BUTTON_LEN
-
-        self.debug = debug
-#        self.debug = True
-        self.sequence = 0
-        self.repeat = args.repeat
-
-        # only one thread because we don't have much data
-        osc_startup()
-
-        if args.address == "" :
-
-            addresses = get_interface_addresses()
-            # if there's only one address use it
-            if len(addresses) == 1:
-                args.address = addresses[0]
-            # if there's multiple pick the non localhost one
-            for a in addresses:
-                # don't send on loopback?
-                if a != '127.0.0.1':
-                    args.address = a
-                    break
-        
-        print(f'OSC listening for broadcasts on {args.address}')
-
-# it appears when setting up UDP listneres generaly you don't need to do anything different
-# for broadcast so just set up the udp server
-        osc_udp_server(args.address,  OSC_PORT, 'server')
-
-        # setting up a catch-all can be good for debugging
-        # osc_method('*', osc_handler_all, argscheme=osm.OSCARG_ADDRESS + osm.OSCARG_DATA + osm.OSCARG_EXTRA, extra=self)
-
-        # setting individual methods for each, slightly more efficient - but won't get timestamp bundles -
-        # so disabling if we're using bundles
-        osc_method('/LC/gyro', osc_handler_gyro, argscheme=osm.OSCARG_DATA + osm.OSCARG_EXTRA, extra=self)
-        osc_method('/LC/rotation', osc_handler_rotation, argscheme=osm.OSCARG_DATA + osm.OSCARG_EXTRA, extra=self)
-        osc_method('/LC/gravity', osc_handler_gravity, argscheme=osm.OSCARG_DATA + osm.OSCARG_EXTRA, extra=self)
-
-        osc_method('/LC/nozzles', osc_handler_nozzles, argscheme=osm.OSCARG_DATA + osm.OSCARG_EXTRA, extra=self)
-        osc_method('/LC/controls', osc_handler_controls, argscheme=osm.OSCARG_DATA + osm.OSCARG_EXTRA, extra=self)
 
 # this is a single method for everything good for debugging
 #        osc_method('/*', osc_handler, argscheme=osm.OSCARG_ADDRESS + osm.OSCARG_DATA + osm.OSCARG_EXTRA,
@@ -286,38 +358,56 @@ class OSCReceiver:
 #        osc_method("#*", osc_handler_bundle, argscheme=osm.OSCARG_ADDRESS + osm.OSCARG_DATA)
 #        print(f' registered bundle handler')
 
+# this is a new process, and uses a blocking OSC library.
+# it takes anything it receives and places it in the shared lc_state object
+# for other processes to read
 
-# background 
+def osc_server(lc_state: LightCurveState, address: str):
 
-# set when you want output
-xmit_event = Event()
+    dispatcher = Dispatcher()
 
-def xmit_thread(xmit):
-    delay = 1.0 / xmit.fps
-    # print(f'delay is {delay} fps is {xmit.fps}')
+    # setting up a catch-all can be good for debugging
+    dispatcher.map('*', osc_handler_all, lc_state)
 
-    while(True):
-        t1 = time()
-        if xmit_event.is_set():
-            xmit.transmit()
-        d = delay - (time() - t1)
-        if (d > 0.002):
-            sleep(d)
+    # setting individual methods for each, slightly more efficient - but won't get timestamp bundles -
+    # so disabling if we're using bundles
+    dispatcher.map('/LC/gyro', osc_handler_gyro, lc_state)
+    dispatcher.map('/LC/rotation', osc_handler_rotation, lc_state)
+    dispatcher.map('/LC/gravity', osc_handler_gravity, lc_state)
 
-        osc_process()
+    dispatcher.map('/LC/imu', osc_handler_imu, lc_state)
 
-def xmit_thread_init(xmit):
-    global BACKGROUND_THREAD, xmit_event
-    xmit_event.set()
-    BACKGROUND_THREAD = Thread(target=xmit_thread, args=(xmit,) )
-    BACKGROUND_THREAD.daemon = True
-    BACKGROUND_THREAD.start()
+    dispatcher.map('/LC/nozzles', osc_handler_nozzles, lc_state)
+    dispatcher.map('/LC/controls', osc_handler_controls, lc_state)
+    dispatcher.set_default_handler(osc_handler_all, lc_state)
 
-def xmit_thread_start():
-    xmit_event.set()
+    server = BlockingOSCUDPServer((address, OSC_PORT), dispatcher)
+    server.serve_forever()  # Blocks forever
 
-def xmit_thread_stop():
-    xmit_event.clear()
+def osc_server_init(lc_state, args):
+    global OSC_PROCESS
+
+    # decide the address to listen on
+    if args.address == "" :
+
+        addresses = get_interface_addresses()
+        # if there's only one address use it
+        if len(addresses) == 1:
+            args.address = addresses[0]
+        # if there's multiple pick the non localhost one
+        for a in addresses:
+            # don't send on loopback?
+            if a != '127.0.0.1':
+                args.address = a
+                break
+    
+    print(f'OSC listening for broadcasts on {args.address}')
+
+
+    OSC_PROCESS = Process(target=osc_server, args=(lc_state, args.address) )
+    OSC_PROCESS.daemon = True
+    OSC_PROCESS.start()
+
 
 
 # useful helper function
@@ -383,10 +473,10 @@ def import_patterns():
 def patterns():
     return ' '.join(PATTERN_FUNCTIONS.keys())
 
-def pattern_execute(pattern: str, xmit, recv) -> bool:
+def pattern_execute(pattern: str, lc_state) -> bool:
 
     if pattern in PATTERN_FUNCTIONS:
-        PATTERN_FUNCTIONS[pattern](xmit, recv)
+        PATTERN_FUNCTIONS[pattern](lc_state)
     else:
         return False
 
@@ -396,14 +486,14 @@ def pattern_insert(pattern_name: str, pattern_fn):
     PATTERN_FUNCTIONS[pattern_name] = pattern_fn
 
 
-def pattern_multipattern(xmit: LightCurveTransmitter, recv: OSCReceiver):
+def pattern_multipattern(state: LightCurveState):
 
     print(f'Starting multipattern pattern')
 
-    for _ in range(xmit.repeat):
+    for _ in range(state.repeat):
         for name, fn in PATTERN_FUNCTIONS.items():
             if name != 'multipattern':
-                fn(xmit, recv)
+                fn(state)
 
     print(f'Ending multipattern pattern')
 
@@ -441,19 +531,25 @@ def main():
 
     args = args_init()
 
-    recv = OSCReceiver(args)
+    lc_state = LightCurveState(args)
 
-    xmit = LightCurveTransmitter(args)
+    # creates a transmitter background process that reads from the shared state
+    transmitter_server_init(lc_state)
 
-    xmit_thread_init(xmit)
+    # creates a osc server receiver process which fills the shared state
+    osc_server_init(lc_state, args)
 
     if args.pattern not in PATTERN_FUNCTIONS:
         print(f' pattern must be one of {patterns()}')
         return
 
     # run it bro
-    for _ in range(args.repeat):
-        pattern_execute(args.pattern, xmit, recv)
+    try:
+        for _ in range(args.repeat):
+            pattern_execute(args.pattern, lc_state)
+
+    except KeyboardInterrupt:
+        pass
 
 
 # only effects when we're being run as a module but whatever

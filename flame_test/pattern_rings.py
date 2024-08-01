@@ -13,45 +13,45 @@ upper_diagonal = [20, 21, 22, 23, 24]
 upper_star = [25, 26, 27, 28, 29]
 sleep_between = 0.15
 
-def pattern_rings(xmit: ft.LightCurveTransmitter, recv: ft.OSCReceiver):
+def pattern_rings(state: ft.LightCurveState):
     print(f'Starting rings pattern')
-    xmit.fill_solenoids(0)
-    xmit.fill_apertures(1.0)
+    state.fill_solenoids(0)
+    state.fill_apertures(1.0)
 
     index = 0
 
     for reps in range(5):
         for i in range(len(lower_star)):
-            xmit.solenoids[lower_star[i]] = 1
+            state.s.solenoids[lower_star[i]] = 1
         sleep(sleep_between)
 
         for i in range(len(lower_star)):
-            xmit.solenoids[lower_star[i]] = 0
+            state.s.solenoids[lower_star[i]] = 0
         for i in range(len(lower_diagonal)):
-            xmit.solenoids[lower_diagonal[i]] = 1
+            state.s.solenoids[lower_diagonal[i]] = 1
         sleep(sleep_between)
 
         for i in range(len(lower_diagonal)):
-            xmit.solenoids[lower_diagonal[i]] = 0
+            state.s.solenoids[lower_diagonal[i]] = 0
         for i in range(len(middle_ring)):
-            xmit.solenoids[middle_ring[i]] = 1
+            state.s.solenoids[middle_ring[i]] = 1
         sleep(sleep_between)
 
         for i in range(len(middle_ring)):
-            xmit.solenoids[middle_ring[i]] = 0
+            state.s.solenoids[middle_ring[i]] = 0
         for i in range(len(upper_diagonal)):
-            xmit.solenoids[upper_diagonal[i]] = 1
+            state.s.solenoids[upper_diagonal[i]] = 1
         sleep(sleep_between)
 
         for i in range(len(upper_diagonal)):
-            xmit.solenoids[upper_diagonal[i]] = 0
+            state.s.solenoids[upper_diagonal[i]] = 0
         for i in range(len(upper_star)):
-            xmit.solenoids[upper_star[i]] = 1
+            state.s.solenoids[upper_star[i]] = 1
         sleep(sleep_between)
 
         for i in range(len(upper_star)):
-            xmit.solenoids[upper_star[i]] = 0
+            state.s.solenoids[upper_star[i]] = 0
 
-    xmit.fill_solenoids(0)
+    state.fill_solenoids(0)
     sleep(0.3)
     print(f'Ending rings pattern')

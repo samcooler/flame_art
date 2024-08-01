@@ -11,7 +11,7 @@ from time import sleep
 # create an array with the pattern
 # move the pattern through the nozzles
 
-def pattern_multiwave(xmit: ft.LightCurveTransmitter, recv: ft.OSCReceiver):
+def pattern_multiwave(state: ft.LightCurveState):
 
   waveSteps = 20  # Total steps in the wave (up and down), even number
   pattern = [0.0] * waveSteps;
@@ -25,24 +25,25 @@ def pattern_multiwave(xmit: ft.LightCurveTransmitter, recv: ft.OSCReceiver):
 
   # Open solenoids close valves
   print(f'open solenoids close valves')
-  xmit.fill_apertures(0.0)
-  xmit.fill_solenoids(1)
+  state.fill_apertures(0.0)
+  state.fill_solenoids(1)
   sleep(0.100)
 
   # overlay the pattern
-  xmit.fill_apertures(0.0)
-  for i in range(xmit.nozzles):
+  state.fill_apertures(0.0)
+  for i in range(state.nozzles):
 
     for j in range(waveSteps):
-        xmit.apertures[ (i + j) % len(xmit.apertures)] = pattern[j]
+        state.s.apertures[ (i + j) % state.nozzles] = pattern[j]
 
     print(f'wave offset: {i} shifting: apertures')
-    # print(xmit.apertures)
+    # since state is shared,
+    # print(state.apertures)
 
     sleep(0.500)
 
   # Open solenoids close valves
-  xmit.fill_apertures(0.0)
+  state.fill_apertures(0.0)
 
   print(f'Ending multiwave pattern')
 

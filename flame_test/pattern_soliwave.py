@@ -9,38 +9,37 @@ from time import sleep
 # use a wave pattern through the sculpture numerically but 
 # only use the solinoids, with the flame wide open
 
-def pattern_soliwave(xmit: ft.LightCurveTransmitter, recv: ft.OSCReceiver):
+def pattern_soliwave(state: ft.LightCurveState):
 
     period = 0.200
 
     print(f'Staring wave solenoids pattern')
 
     # Close all solenoids open all flow
-    xmit.fill_solenoids(0)
-    xmit.fill_apertures(1.0)
-    xmit.transmit()
+    state.fill_solenoids(0)
+    state.fill_apertures(1.0)
     sleep(0.100)
 
     # go through all the solonoids one by one
-    for i in range(xmit.nozzles):
+    for i in range(state.nozzles):
         print(f'turn on solinoid {i}')
-        xmit.solenoids[i] = 1
+        state.s.solenoids[i] = 1
         sleep(period)
 
     # close them in the same order
-    for i in range(xmit.nozzles):
+    for i in range(state.nozzles):
         print(f'turn off solinoid {i}')        
-        xmit.solenoids[i] = 0
+        state.s.solenoids[i] = 0
         sleep(period)
 
-    for i in range(xmit.nozzles-1,0,-1):
+    for i in range(state.nozzles-1,0,-1):
         print(f'turn on solinoid {i}')
-        xmit.solenoids[i] = 1
+        state.s.solenoids[i] = 1
         sleep(period)
 
-    for i in range(xmit.nozzles-1,0,-1):
+    for i in range(state.nozzles-1,0,-1):
         print(f'turn off solinoid {i}')
-        xmit.solenoids[i] = 0
+        state.s.solenoids[i] = 0
         sleep(period)
 
     print(f'Ending wave solenoids pattern')

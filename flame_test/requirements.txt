@@ -1,1 +1,3 @@
 importlib
+pythonosc
+netifaces

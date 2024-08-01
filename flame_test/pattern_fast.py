@@ -6,21 +6,21 @@
 import flame_test as ft
 from time import sleep
 
-def pattern_fast(xmit: ft.LightCurveTransmitter, recv: ft.OSCReceiver):
+def pattern_fast(state: ft.LightCurveState):
     print(f'Starting fast pattern')
-    xmit.fill_solenoids(0)
-    xmit.fill_apertures(1.0)
+    state.fill_solenoids(0)
+    state.fill_apertures(1.0)
 
     index = 0
-    for j in range(xmit.nozzles * 3):
-        for i in range(xmit.nozzles):
+    for j in range(state.nozzles * 3):
+        for i in range(state.nozzles):
             if i == index:
-                xmit.solenoids[i] = 1
+                state.s.solenoids[i] = 1
             else:
-                xmit.solenoids[i] = 0
+                state.s.solenoids[i] = 0
         sleep(0.3)
-        index = (index + 1) % xmit.nozzles
+        index = (index + 1) % state.nozzles
 
-    xmit.fill_solenoids(0)
+    state.fill_solenoids(0)
     sleep(0.3)
     print(f'Ending fast pattern')

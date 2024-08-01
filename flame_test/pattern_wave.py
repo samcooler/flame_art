@@ -6,20 +6,20 @@
 import flame_test as ft
 from time import sleep
 
-def pattern_wave(xmit: ft.LightCurveTransmitter, recv: ft.OSCReceiver):
+def pattern_wave(state: ft.LightCurveState):
 
     print('Starting Wave Pattern')
     wait = 0.500
 
     print('Wave: Close all solenoids')
     # Close all solenoids
-    xmit.fill_solenoids(0)
+    state.fill_solenoids(0)
     sleep(wait)
 
     # Open servos fully
     print('Wave: Open all servos and solenoids')
-    xmit.fill_solenoids(1)
-    xmit.fill_apertures(1.0)
+    state.fill_solenoids(1)
+    state.fill_apertures(1.0)
     sleep(wait)
 
     # Change servo valve from 100% to 10% and back
@@ -28,18 +28,18 @@ def pattern_wave(xmit: ft.LightCurveTransmitter, recv: ft.OSCReceiver):
     wait = 0.300
     for i in range(steps):
         print(f'Wave: open solinoid to {1.0 - (i * step)}')
-        xmit.fill_apertures(1.0 - (i * step))
+        state.fill_apertures(1.0 - (i * step))
         sleep(wait)
 
     for i in range(steps):
         print(f'Wave: open solinoid to {i * step}')
-        xmit.fill_apertures(i * step)
+        state.fill_apertures(i * step)
         sleep(wait)
 
     # Close solenoids
     print(f'Wave: close solenoids')
 
-    xmit.fill_solenoids(0)
+    state.fill_solenoids(0)
 
     print('Ending Wave Pattern')
 
