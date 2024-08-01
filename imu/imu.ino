@@ -55,13 +55,13 @@ void setup(void)
   wifiConnect();
   printWiFiStatus();
 
+  Serial.println(" starting bno08x connection: begin_I2C");
+
   if (!bno08x.begin_I2C())
   {
-    Serial.println("Failed to find BNO08x chip");
-    while (true)
-    {
-      delay(10);
-    }
+    Serial.println("Failed to find BNO08x chip, resetting");
+    delay(200);
+    NVIC_SystemReset();
   }
 
   Serial.println("BNO08x Found!");
