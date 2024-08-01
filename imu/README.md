@@ -17,8 +17,9 @@ https://adafruit.github.io/arduino-board-index/package_adafruit_index.json
 Then you will see the adafruit SAMD package. The board should autodetect as 
 ' Adafruit Feather M0 ' after the board 
 
-You may have to go back and reinstall wifi after installing the board. Seems to be different
-or something
+I suggest changing the optmiziation level to O2 or O3. We have enough room, and
+O2 and O3 do not change the amount of space much compared to Os. The regularity of
+wifi output seems high with O3.
 
 Here's a nice guide from Adafruit about some of the peculiarities of the M0
 
