@@ -36,9 +36,19 @@ password: curvelight
 
 Subnet: 192.168.13.0/24
 
-Router username password : admin / admin
+Router username password : admin / dadmin
 
 DHCP range: 100 to 190
+
+# Raspberry PI
+
+See subdirector rpi_config
+
+Username: pi
+
+Password: curvelight
+
+IP: 10.0.0.7 (static on ethernet)
 
 # controllers
 
