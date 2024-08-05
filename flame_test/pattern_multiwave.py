@@ -30,7 +30,6 @@ def pattern_multiwave(state: ft.LightCurveState):
   sleep(0.100)
 
   # overlay the pattern
-  state.fill_apertures(0.0)
   for i in range(state.nozzles):
 
     for j in range(waveSteps):
@@ -42,7 +41,7 @@ def pattern_multiwave(state: ft.LightCurveState):
 
     sleep(0.500)
 
-  # Open solenoids close valves
+  # close valves at and
   state.fill_apertures(0.0)
 
   print(f'Ending multiwave pattern')

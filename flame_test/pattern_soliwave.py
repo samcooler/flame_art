@@ -15,10 +15,10 @@ def pattern_soliwave(state: ft.LightCurveState):
 
     print(f'Staring wave solenoids pattern')
 
-    # Close all solenoids open all flow
+    # Close all solenoids open all flow settle
     state.fill_solenoids(0)
     state.fill_apertures(1.0)
-    sleep(0.100)
+    sleep(0.500)
 
     # go through all the solonoids one by one
     for i in range(state.nozzles):
@@ -32,12 +32,14 @@ def pattern_soliwave(state: ft.LightCurveState):
         state.s.solenoids[i] = 0
         sleep(period)
 
-    for i in range(state.nozzles-1,0,-1):
+    # open them in reverse
+    for i in range(state.nozzles-1,-1,-1):
         print(f'turn on solinoid {i}')
         state.s.solenoids[i] = 1
         sleep(period)
 
-    for i in range(state.nozzles-1,0,-1):
+    # close them in reverse
+    for i in range(state.nozzles-1,-1,-1):
         print(f'turn off solinoid {i}')
         state.s.solenoids[i] = 0
         sleep(period)

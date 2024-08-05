@@ -7,9 +7,10 @@ import flame_test as ft
 from time import sleep
 
 def pattern_fast(state: ft.LightCurveState):
-    print(f'Starting fast pattern')
+    print(f'Starting fast pattern - all solenoids')
     state.fill_solenoids(0)
     state.fill_apertures(1.0)
+    sleep(0.3)
 
     index = 0
     for j in range(state.nozzles * 3):

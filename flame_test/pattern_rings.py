@@ -17,6 +17,7 @@ def pattern_rings(state: ft.LightCurveState):
     print(f'Starting rings pattern')
     state.fill_solenoids(0)
     state.fill_apertures(1.0)
+    sleep(0.5)
 
     index = 0
 

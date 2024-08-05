@@ -30,6 +30,7 @@ from time import sleep, time
 import argparse
 import json
 from multiprocessing import Process, Event, Manager
+from types import SimpleNamespace
 import asyncio
 import math
 
@@ -106,38 +107,55 @@ def _artnet_packet(universe: int, sequence: int, packet: bytearray ):
 #
 # This is a shared class, across processes. It is shared between processes
 # by simply passing it through the process create. This has the amusing property
-# of creating a new copy of the object, but any fields Managed by multiprocessing
-# are essentially copied by reference. This object, thus, gets initialized only
-# once, but exists in three copies - one in each process - but the shared object
-# is shared.
+# of creating a new copy of the object.
 #
-# this means values that are in args and never change don't need to be copied
-# into shared, only mutable values need to be constructed in the shared object
+# A note about using shared memory in Python multiprocessing!
 #
-# while this use is terse and rather cute, the construct / copy mechanism
-# between processes becomes a little bit of a footgun. Beware.
+# First fun fact: When you create a shared Namespace, objects within it are created shared, but not recursively.
+# this means you can create an entire list, assign it to the namespace, and that list will be shared.
+# However, mutations to that list will not be shared! That only happens if the list is also shared.
+#
+# Second fun fact: creating a Manager is expensive, and the manager must be kept alive for the lifetime
+# of all objects created using the namespace. You'll essentially use a ton more memory than you think if you
+# just access Manager() to create a new manager every time you create a new array.
+#
+# Third fun fact: Manager is not pickleable, thus can't be passed across a process boundry. Which means
+# what you really is one of two things: create all your shared objects up front from the main process,
+# or create one manager per process and use that manager for all subsequent alloactions in that process.
+#
+# In this code, I am using the technique of allocating all the shared memory up-front. We know the sizes
+# of these arrays, and thus make sure we copy by value and not replace the arrays with arrays which are
+# mutable only in the process. Alternately, one could create a manager instance in LightCurveState which
+# is constructed once, indepenatly, in each process and used every time you want to create a new shared list.
+# I am guessing that the efficiency of accessing elements is cheaper than creating new arrays, which is usually
+# not the case in python. 
+
 
 class LightCurveState:
 
-    def __init__(self, args):
-        self.s = Manager().Namespace()
+    def __init__(self, args, manager):
 
         self.controllers = args.controllers
         self.nozzles = args.nozzles
 
+# not quite sure if I need a shared namespace or a simple namespace will do.
+# if all the objects in the namespace are themselves shared, then a simple namespace should work.
+# if there are any non-shared objects (eg, integers or strings), then I must use a shared namespace?
+#        self.s = manager.Namespace()
+        self.s = SimpleNamespace()
         s = self.s
-        s.apertures = [0.0] * self.nozzles
-        s.solenoids = [0] * self.nozzles
+        s.apertures = manager.list( [0.0] * self.nozzles )
+        s.solenoids = manager.list( [0] * self.nozzles )
 
         # rotational speed around pitch, yaw, roll        
-        s.gyro = [0.0] * 3
+        s.gyro = manager.list( [0.0] * 3 )
         # absolute rotational position compared to a fixed reference frame
-        s.rotation = [0.0] * 3
+        s.rotation = manager.list( [0.0] * 3 )
         # the direction in which gravity currently is
-        s.gravity = [0.0] * 3
+        s.gravity = manager.list( [0.0] * 3 )
 
-        s.nozzles_buttons = [False] * NOZZLE_BUTTON_LEN
-        s.control_buttons = [False] * CONTROL_BUTTON_LEN
+        s.nozzle_buttons = manager.list( [False] * NOZZLE_BUTTON_LEN )
+        s.control_buttons = manager.list( [False] * CONTROL_BUTTON_LEN )
 
         self.debug = debug
         self.fps = args.fps
@@ -147,17 +165,12 @@ class LightCurveState:
         self.repeat = args.repeat
         self.fps = args.fps
 
-    # because this is a shared object, I think constructing then setting
-    # is faster than setting one by one
+
     def fill_apertures(self, val: float):
-        self.s.apertures = [val] * self.nozzles
-#        for i in range(0,self.s.nozzles):
-#            self.s.apertures[i] = val
+        self.s.apertures[:] = [val] * self.nozzles
 
     def fill_solenoids(self, val: int):
-        self.s.solenoids = [val] * self.nozzles
-#        for i in range(0,self.s.nozzles):
-#            self.s.solenoids[i] = val
+        self.s.solenoids[:] = [val] * self.nozzles
 
     def print_aperture(self):
         print(self.s.apertures)
@@ -208,10 +221,17 @@ class LightCurveTransmitter:
                         (self.lc_state.s.apertures[i+offset] < 0.0) or (self.lc_state.s.apertures[i+offset] > 1.0)):
                     print(f'flow at {i+offset} out of range {self.lc_state.s.apertures[i+offset]} skipping')
 
-                if self.lc_state.s.apertures[i+offset] < 0.10:
-                    packet[ARTNET_HEADER_SIZE + (i*2) ] = 0
-                else:
-                    packet[ARTNET_HEADER_SIZE + (i*2) ] = self.lc_state.s.solenoids[i+offset]
+# FILTER
+# In the case where the solenoid and aperture are mapped to the same physical device,
+# it is useful to turn off the solenoid when the aperture value is small. However, before mapping,
+# it doesn't work, because the apertures and nozzles are not the same physical device.
+
+#                if self.lc_state.s.apertures[i+offset] < 0.10:
+#                    print(f'force to 0 solenoid {i+offset}')
+#                    packet[ARTNET_HEADER_SIZE + (i*2) ] = 0
+#                else:
+
+                packet[ARTNET_HEADER_SIZE + (i*2) ] = self.lc_state.s.solenoids[i+offset]
 
                 packet[ARTNET_HEADER_SIZE + (i*2) + 1] = math.floor(self.lc_state.s.apertures[i+offset] * 255.0 )
 
@@ -227,45 +247,49 @@ class LightCurveTransmitter:
 
 # background 
 
-XMIT_EVENT = Event()
-
 # see comment about lc_state, it is a cross process shared object.
 # this function is a separate process
 
-def transmitter_server(lc_state: LightCurveState, xmit_event: Event):
+def transmitter_server(lc_state: LightCurveState, terminate: Event):
 
     xmit = LightCurveTransmitter(lc_state)
 
     delay = 1.0 / lc_state.fps
     # print(f'delay is {delay} fps is {xmit.fps}')
+    try:
+        while not terminate.is_set():
+            t1 = time()
 
-    while(True):
-        t1 = time()
-
-        if xmit_event.is_set():
             xmit.transmit()
 
-        d = delay - (time() - t1)
-        if (d > 0.002):
-            sleep(d)
+            d = delay - (time() - t1)
+            if (d > 0.002):
+                sleep(d)
+
+    except KeyboardInterrupt:
+        pass
+
+    print(f'transmit server: turning off gas')
+    lc_state.fill_apertures(0.0)
+    lc_state.fill_solenoids(0)
+    xmit.transmit()
+    sleep(0.1)
 
 def transmitter_server_init(lc_state: LightCurveState):
-    global TRANSMITTER_PROCESS, XMIT_EVENT
+    global TRANSMITTER_PROCESS, XMIT_TERMINATE_EVENT
 
     print('transmitter server init')
-
-    XMIT_EVENT.set()
-    TRANSMITTER_PROCESS = Process(target=transmitter_server, args=(lc_state, XMIT_EVENT) )
-    TRANSMITTER_PROCESS.daemon = True
+    XMIT_TERMINATE_EVENT = Event()
+    TRANSMITTER_PROCESS = Process(target=transmitter_server, args=(lc_state, XMIT_TERMINATE_EVENT) )
     TRANSMITTER_PROCESS.start()
 
-def transmitter_server_start():
-    global XMIT_EVENT
-    XMIT_EVENT.set()
+def transmitter_server_shutdown():
+    # print(f'shutdown transmitter')
+    global TRANSMITTER_PROCESS, XMIT_TERMINATE_EVENT
 
-def transmitter_server_stop():
-    global XMIT_EVENT
-    XMIT_EVENT.clear()
+    XMIT_TERMINATE_EVENT.set()
+    TRANSMITTER_PROCESS.join()
+
 
 
 # it appears in python when we set up a broadcast listerner
@@ -292,6 +316,10 @@ def get_interface_addresses():
 # Not yet sure how to get the timestamp out of the bundle
 # Bundle receiption hasn't worked
 
+# note: copying into the shared variables must be done by value not by reference.
+# thus the use of a loop here. DO NOT REPLACE WITH AN ARRAY COPY. See the statement
+# about multiprocess memory use in the shared object section
+
 # generic handler good for debugging
 def osc_handler_all (address: str, fixed_args: List[Any], *vals):
     lc_state = fixed_args[0]
@@ -303,21 +331,21 @@ def osc_handler_gyro(address: str, fixed_args: List[Any], *vals):
     lc_state = fixed_args[0]
     if len(vals) != 3:
         return
-    lc_state.s.gyro = vals
+    lc_state.s.gyro[:] = vals
  
 def osc_handler_rotation(address: str, fixed_args: List[Any], *vals):
     print(f' osc: rotation {vals}') if lc_state.debug else None
     lc_state = fixed_args[0]
     if len(vals) != 3:
         return
-    lc_state.s.rotation = vals
+    lc_state.s.rotation[:] = vals
 
 def osc_handler_gravity(address: str, fixed_args: List[Any], *vals):
     print(f' osc: gravity {vals}') if lc_state.debug else None
     lc_state = fixed_args[0]
     if len(vals) != 3:
         return
-    lc_state.s.gravity = vals
+    lc_state.s.gravity[:] = vals
 
 # imu order
 # miliseconds int
@@ -329,9 +357,9 @@ def osc_handler_imu(address: str, fixed_args: List[Any], *vals):
         print(f'IMU: wrong number parameters should be 10 is: {len(vals) }')
         return
     lc_state = fixed_args[0]
-    lc_state.s.rotation = vals[1:4]
-    lc_state.s.gravity = vals[4:7]
-    lc_state.s.gyro = vals[7:10]
+    lc_state.s.rotation[:] = vals[1:4]
+    lc_state.s.gravity[:] = vals[4:7]
+    lc_state.s.gyro[:] = vals[7:10]
     print(f'OSC IMU: rot {vals[1]:.4f}, {vals[2]:.4f}, {vals[3]:.4f}, grav {vals[4]:.4f}, {vals[5]:.4f}, {vals[6]:.4f} gyro {vals[7]:.4f}, {vals[8]:.4f}, {vals[9]:.4f}  ') if lc_state.debug else None
     print(f'OSC IMU: rot {vals[1]:.4f}, {vals[2]:.4f}, {vals[3]:.4f}, grav {vals[4]:.4f}, {vals[5]:.4f}, {vals[6]:.4f} gyro {vals[7]:.4f}, {vals[8]:.4f}, {vals[9]:.4f}  ') 
 
@@ -339,12 +367,18 @@ def osc_handler_imu(address: str, fixed_args: List[Any], *vals):
 def osc_handler_nozzles(address: str, fixed_args: List[Any], *vals):
     print(f' osc: nozzles {vals}') if lc_state.debug else None
     lc_state = fixed_args[0]
-    lc_state.s.nozzles = vals
+    if len(vals) != len(lc_state.s.nozzle_buttons):
+        print(f'Nozzle Buttons: expected {len(lc_state.s.nozzle_buttons)} found len {len(vals)} ignoring')
+        return
+    lc_state.s.nozzle_buttons[:] = vals
 
 def osc_handler_controls(address: str, fixed_args: List[Any], *vals):
     print(f' osc: controls {vals}') if lc_state.debug else None
     lc_state = fixed_args[0]
-    lc_state.s.controls = vals
+    if len(vals) != len(lc_state.s.control_buttons):
+        print(f'Control buttons: expected {len(lc_state.s.control_buttons)} found {len(vals)} ignoring')
+        return
+    lc_state.s.control_buttons[:] = valss
 
 
 #this has never worked
@@ -388,7 +422,12 @@ def osc_server(lc_state: LightCurveState, address: str):
     dispatcher.set_default_handler(osc_handler_all, lc_state)
 
     server = BlockingOSCUDPServer((address, OSC_PORT), dispatcher)
-    server.serve_forever()  # Blocks forever
+
+    try:
+        server.serve_forever()  # Blocks forever
+
+    except KeyboardInterrupt: # swallow silently
+        pass
 
 def osc_server_init(lc_state, args):
     global OSC_PROCESS
@@ -537,25 +576,33 @@ def main():
 
     args = args_init()
 
-    lc_state = LightCurveState(args)
+    with Manager() as manager:
 
-    # creates a transmitter background process that reads from the shared state
-    transmitter_server_init(lc_state)
+        lc_state = LightCurveState(args, manager)
 
-    # creates a osc server receiver process which fills the shared state
-    osc_server_init(lc_state, args)
+        # creates a transmitter background process that reads from the shared state
+        transmitter_server_init(lc_state)
 
-    if args.pattern not in PATTERN_FUNCTIONS:
-        print(f' pattern must be one of {patterns()}')
-        return
+        # creates a osc server receiver process which fills the shared state
+        osc_server_init(lc_state, args)
 
-    # run it bro
-    try:
-        for _ in range(args.repeat):
-            pattern_execute(args.pattern, lc_state)
+        if args.pattern not in PATTERN_FUNCTIONS:
+            print(f' pattern must be one of {patterns()}')
+            return
 
-    except KeyboardInterrupt:
-        pass
+        # run it bro
+        try:
+            for _ in range(args.repeat):
+                pattern_execute(args.pattern, lc_state)
+
+        except KeyboardInterrupt: # be silent in this case
+            pass
+
+        finally:
+            print(f' in all cases, try to shutdown the transmitter safely')
+            transmitter_server_shutdown()
+            sleep(0.5)
+
 
 
 # only effects when we're being run as a module but whatever
