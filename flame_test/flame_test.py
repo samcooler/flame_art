@@ -158,12 +158,9 @@ class LightCurveState:
         s.control_buttons = manager.list( [False] * CONTROL_BUTTON_LEN )
 
         self.debug = debug
-        self.fps = args.fps
 
-        # this is a little bit of a hack because it's not part of the sculpture
-        # state. It is convenient
-        self.repeat = args.repeat
-        self.fps = args.fps
+        # The arguments structure is a convenient way to get information to patterns.
+        self.args = args
 
 
     def fill_apertures(self, val: float):
@@ -254,7 +251,7 @@ def transmitter_server(lc_state: LightCurveState, terminate: Event):
 
     xmit = LightCurveTransmitter(lc_state)
 
-    delay = 1.0 / lc_state.fps
+    delay = 1.0 / lc_state.args.fps
     # print(f'delay is {delay} fps is {xmit.fps}')
     try:
         while not terminate.is_set():
@@ -521,7 +518,7 @@ def patterns():
 def pattern_execute(pattern: str, lc_state) -> bool:
 
     if pattern in PATTERN_FUNCTIONS:
-        PATTERN_FUNCTIONS[pattern](lc_state)
+        return PATTERN_FUNCTIONS[pattern](lc_state)
     else:
         return False
 
@@ -535,10 +532,11 @@ def pattern_multipattern(state: LightCurveState):
 
     print(f'Starting multipattern pattern')
 
-    for _ in range(state.repeat):
+    for _ in range(state.args.repeat):
         for name, fn in PATTERN_FUNCTIONS.items():
             if name != 'multipattern':
-                fn(state)
+                if fn(state): # check if pattern returns false for error, if so return error too
+                    return False
 
     print(f'Ending multipattern pattern')
 
@@ -552,7 +550,12 @@ def args_init():
     parser.add_argument('--pattern', '-p', default="pulse", type=str, help=f'pattern one of: {patterns()}')
     parser.add_argument('--address', '-a', default="0.0.0.0", type=str, help=f'address to listen OSC on defaults to broadcast on non-loop')
     parser.add_argument('--fps', '-f', default=15, type=int, help='frames per second')
-    parser.add_argument('--repeat', '-r', default=1, type=int, help="number of times to run pattern")
+    parser.add_argument('--repeat', '-r', default=9999, type=int, help="number of times to run pattern")
+
+    # some patterns use optional arguments, but they can also share.
+    parser.add_argument('--nozzle', '-n', type=int, help="pattern specific: nozzel to apply to")
+    parser.add_argument('--delay', '-d', type=float, help="pattern specific: delay between items")
+    parser.add_argument('--group', '-g', type=int, help="pattern specific: size of group in pattern")
 
     args = parser.parse_args()
 
@@ -576,6 +579,10 @@ def main():
 
     args = args_init()
 
+    if args.pattern not in PATTERN_FUNCTIONS:
+        print(f' pattern must be one of {patterns()}')
+        return
+
     with Manager() as manager:
 
         lc_state = LightCurveState(args, manager)
@@ -586,9 +593,7 @@ def main():
         # creates a osc server receiver process which fills the shared state
         osc_server_init(lc_state, args)
 
-        if args.pattern not in PATTERN_FUNCTIONS:
-            print(f' pattern must be one of {patterns()}')
-            return
+
 
         # run it bro
         try:

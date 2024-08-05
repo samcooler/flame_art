@@ -7,10 +7,13 @@ import flame_test as ft
 from time import sleep
 
 
-def pattern_pulse(state: ft.LightCurveState):
+def pattern_pulse(state: ft.LightCurveState) -> bool:
 
     # seconds to go through a pulse
     period = 5.0
+    if state.args.delay is not None:
+        period = state.args.delay
+        
     # how often to update (in seconds)
     update = 0.2
     # time for the apertures to settle
@@ -26,7 +29,7 @@ def pattern_pulse(state: ft.LightCurveState):
 
     print(f' Turn on solenoids (leaving apertures closed)')
     state.fill_solenoids(1)
-    sleep(0.1)
+    sleep(settle)
 
     # open the valves in steps
 
@@ -34,7 +37,7 @@ def pattern_pulse(state: ft.LightCurveState):
     print(f' steps: {steps}')
     for f in range(0,int(steps)):
         print(f' set flow {f / steps }')
-        state.fill_apertures(f / steps )
+        state.fill_apertures(f / steps)
         sleep(update)
 
     # shut them all down
@@ -42,3 +45,5 @@ def pattern_pulse(state: ft.LightCurveState):
     sleep(settle)
 
     print(f'Ending Pulse Pattern')
+
+    return(True)

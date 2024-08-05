@@ -9,9 +9,11 @@ from time import sleep
 # use a wave pattern through the sculpture numerically but 
 # only use the solinoids, with the flame wide open
 
-def pattern_soliwave(state: ft.LightCurveState):
+def pattern_soliwave(state: ft.LightCurveState) -> bool:
 
     period = 0.200
+    if state.args.delay is not None:
+        period = state.args.delay
 
     print(f'Staring wave solenoids pattern')
 
@@ -20,7 +22,7 @@ def pattern_soliwave(state: ft.LightCurveState):
     state.fill_apertures(1.0)
     sleep(0.500)
 
-    # go through all the solonoids one by one
+    # turn on all the solonoids one by one
     for i in range(state.nozzles):
         print(f'turn on solinoid {i}')
         state.s.solenoids[i] = 1
@@ -45,3 +47,5 @@ def pattern_soliwave(state: ft.LightCurveState):
         sleep(period)
 
     print(f'Ending wave solenoids pattern')
+
+    return(True)

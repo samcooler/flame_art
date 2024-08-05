@@ -7,13 +7,23 @@ import flame_test as ft
 from time import sleep
 
 
-def pattern_leaks(state: ft.LightCurveState):
+def pattern_group(state: ft.LightCurveState) -> bool:
 
-    wait = 3.0
+    if state.args.delay is not None:
+        wait = state.args.delay
+    else:
+        wait = 3.0
+
     group_size = 5
+    if state.args.group is not None:
+        group_size = state.args.group
+        if (group_size > state.nozzles):
+            print('Group size too large')
+            return(False)
+
     n = 0
 
-    print(f'Starting Leaks Pattern (infinite)')
+    print(f'Starting Groups Pattern (infinite)')
     print(f' secs between groups: {wait} :: size of group {group_size}')
 
     print(f' Turn OFF servos and solenoids and wait a sec to settle')
@@ -25,8 +35,7 @@ def pattern_leaks(state: ft.LightCurveState):
     state.fill_apertures(1.0)
     sleep(1.0)
 
-
-    while True:
+    while state.args.repeat > 0:
 
         start = n
         end = n + group_size
@@ -47,4 +56,8 @@ def pattern_leaks(state: ft.LightCurveState):
         if n >= state.nozzles:
             n = 0
 
-    print(f'Ending Leaks Pattern')
+        state.args.repeat -= 1
+
+    print(f'Ending Groups Pattern')
+
+    return(True)

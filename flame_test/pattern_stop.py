@@ -6,7 +6,7 @@
 import flame_test as ft
 from time import sleep
 
-def pattern_stop(state: ft.LightCurveState):
+def pattern_stop(state: ft.LightCurveState) -> bool:
 
     print('Shutting down fire')
 
@@ -18,3 +18,4 @@ def pattern_stop(state: ft.LightCurveState):
     # use a delay and hope
     sleep(0.5)
 
+    return(True)

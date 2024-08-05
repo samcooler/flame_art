@@ -6,7 +6,7 @@
 import flame_test as ft
 from time import sleep
 
-def pattern_wave(state: ft.LightCurveState):
+def pattern_wave(state: ft.LightCurveState) -> bool:
 
     print('Starting Wave Pattern')
     wait = 0.500
@@ -42,4 +42,6 @@ def pattern_wave(state: ft.LightCurveState):
     state.fill_solenoids(0)
 
     print('Ending Wave Pattern')
+
+    return(True)
 

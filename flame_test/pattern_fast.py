@@ -6,7 +6,7 @@
 import flame_test as ft
 from time import sleep
 
-def pattern_fast(state: ft.LightCurveState):
+def pattern_fast(state: ft.LightCurveState) -> bool:
     print(f'Starting fast pattern - all solenoids')
     state.fill_solenoids(0)
     state.fill_apertures(1.0)
@@ -25,3 +25,5 @@ def pattern_fast(state: ft.LightCurveState):
     state.fill_solenoids(0)
     sleep(0.3)
     print(f'Ending fast pattern')
+
+    return(True)

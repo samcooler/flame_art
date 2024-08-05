@@ -11,9 +11,15 @@ from time import sleep
 # create an array with the pattern
 # move the pattern through the nozzles
 
-def pattern_multiwave(state: ft.LightCurveState):
+def pattern_multiwave(state: ft.LightCurveState) -> bool:
 
   waveSteps = 20  # Total steps in the wave (up and down), even number
+  if state.args.group is not None:
+    waveSteps = state.args.group
+    if (waveSteps > state.nozzles):
+      print(f'Group size greater than number of nozzels')
+      return(False)
+
   pattern = [0.0] * waveSteps;
 
   # Initialize the wave pattern
@@ -45,4 +51,6 @@ def pattern_multiwave(state: ft.LightCurveState):
   state.fill_apertures(0.0)
 
   print(f'Ending multiwave pattern')
+
+  return(True)
 

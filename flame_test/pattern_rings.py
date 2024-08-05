@@ -13,7 +13,7 @@ upper_diagonal = [20, 21, 22, 23, 24]
 upper_star = [25, 26, 27, 28, 29]
 sleep_between = 0.15
 
-def pattern_rings(state: ft.LightCurveState):
+def pattern_rings(state: ft.LightCurveState) -> bool:
     print(f'Starting rings pattern')
     state.fill_solenoids(0)
     state.fill_apertures(1.0)
@@ -56,3 +56,5 @@ def pattern_rings(state: ft.LightCurveState):
     state.fill_solenoids(0)
     sleep(0.3)
     print(f'Ending rings pattern')
+
+    return(True)
