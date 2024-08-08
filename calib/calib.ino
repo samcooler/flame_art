@@ -39,7 +39,7 @@ PCA9539 pca9539(0x77);
 // PCA9685 pca9685();
 
 // SERVOS
-const int NUM_VALVES = 10;
+const int NUM_VALVES = 12;
 float valveStates[NUM_VALVES]; // Stores valve states (0.0 to 1.0)
 // int calMin[NUM_VALVES] = {2420, 2420, 2420, 2420}; // min flow calibration (highest number)
 int calMin[NUM_VALVES] = {2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400};
@@ -846,7 +846,7 @@ void processCommand(String command)
 //   return;
 //   int maxRectHeight = SCREEN_HEIGHT / 2;
 //   display.clearDisplay(); // Clear the display buffer
-//   int rectWidth = SCREEN_WIDTH / 10; // Divide screen width by number of valves
+//   int rectWidth = SCREEN_WIDTH / NUM_VALVES; // Divide screen width by number of valves
 
 //   for (int i = 0; i < NUM_VALVES; i++) {
 //     // Calculate the rectangle's height based on the valve state and the maximum height
