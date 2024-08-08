@@ -47,20 +47,22 @@ def pattern_pulse(state: ft.LightCurveState) -> bool:
 
     # open the valves in steps
 
-    steps = period / update
-    print(f' steps: {steps}')
-    for f in range(0,int(steps)):
+    while True:
 
-        print(f' set flow {f / steps }')
+        steps = period / update
+        print(f' steps: {steps}')
+        for f in range(0,int(steps)):
 
-        if nozzle is not None:
-            for i in range(0,group_size):
-                state.s.apertures[nozzle+i] = f / steps
+            print(f' set flow {f / steps }')
 
-        else:
-            state.fill_apertures(f / steps)
+            if nozzle is not None:
+                for i in range(0,group_size):
+                    state.s.apertures[nozzle+i] = f / steps
 
-        sleep(update)
+            else:
+                state.fill_apertures(f / steps)
+
+            sleep(update)
 
     # shut them all down
     state.fill_apertures(0.0)
