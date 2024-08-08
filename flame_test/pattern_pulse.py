@@ -20,7 +20,21 @@ def pattern_pulse(state: ft.LightCurveState) -> bool:
     settle = 0.1
     print(f'Starting Pulse Pattern')
 
-    wait = 1.0
+    group_size = 1
+    if state.args.group is not None:
+        group_size = state.args.group
+
+    nozzle = state.args.nozzle
+    if (nozzle is not None) and (nozzle + group_size > state.nozzles):
+        print(f' Poof pattern: nozzle index andor group size too large, exiting')
+        return(False)
+
+    if nozzle is not None:
+        print(f' pulsing from {nozzle} to {nozzle+group_size-1}')
+    else:
+        print(f' pulsing all solenoids ')
+
+    wait = 3.0
 
     print(f' Turn off servos and solenoids')
     state.fill_solenoids(0)
@@ -36,8 +50,16 @@ def pattern_pulse(state: ft.LightCurveState) -> bool:
     steps = period / update
     print(f' steps: {steps}')
     for f in range(0,int(steps)):
+
         print(f' set flow {f / steps }')
-        state.fill_apertures(f / steps)
+
+        if nozzle is not None:
+            for i in range(0,group_size):
+                state.s.apertures[nozzle+i] = f / steps
+
+        else:
+            state.fill_apertures(f / steps)
+
         sleep(update)
 
     # shut them all down
