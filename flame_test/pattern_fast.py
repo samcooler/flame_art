@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 
-# Author: Eric Gauderman
+# Author: Eric Harper-Gauderman
 
-# want the globals and helper functions from flametest
 import flame_test as ft
 from time import sleep
 
 def pattern_fast(state: ft.LightCurveState) -> bool:
-    print(f'Starting fast pattern - all solenoids')
     state.fill_solenoids(0)
     state.fill_apertures(1.0)
     sleep(0.3)
@@ -24,6 +22,5 @@ def pattern_fast(state: ft.LightCurveState) -> bool:
 
     state.fill_solenoids(0)
     sleep(0.3)
-    print(f'Ending fast pattern')
 
     return(True)
