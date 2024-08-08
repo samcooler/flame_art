@@ -52,6 +52,22 @@ Change the name of the single function `def pattern_pulse` to the same name as t
 
 Change the pattern to so what you'd like. Use delays or time to update the array of `solinoid` and `aperture`. 
 
+# Mapping and configuration
+
+The configuration file specifies what controller boards exist, how many nozzels they have, for outputting the right ArtNet.
+
+When writing a pattern, write using the "mapped" version of LightCurve,
+where the nozzels go around in a circle and from the bottom to the top.
+
+In the config file, there is a mapping from the nozzels and solenoids as they
+are on the sculpture - which is randomly connected - to the abstract pattern version.
+
+For example, if controller "1" solenoid "1" actually maps to solenoid "8" in the
+abstract version, place the number "8" in the correct slot in the "solenoid_map"
+position 1 in the config file.
+
+
+
 # The off state
 
 Since the calibration is not yet perfect, there is a small bit of code that also turns the solenoid off for a small aperture. This value can be played with, or eventually removed,
