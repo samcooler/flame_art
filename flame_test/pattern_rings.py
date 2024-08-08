@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 
-# Author: Eric Gauderman
+# Author: Eric Harper-Gauderman
 
-# want the globals and helper functions from flametest
 import flame_test as ft
 from time import sleep
 
@@ -14,7 +13,6 @@ upper_star = [25, 26, 27, 28, 29]
 sleep_between = 0.15
 
 def pattern_rings(state: ft.LightCurveState) -> bool:
-    print(f'Starting rings pattern')
     state.fill_solenoids(0)
     state.fill_apertures(1.0)
     sleep(0.5)
@@ -55,6 +53,5 @@ def pattern_rings(state: ft.LightCurveState) -> bool:
 
     state.fill_solenoids(0)
     sleep(0.3)
-    print(f'Ending rings pattern')
 
     return(True)
