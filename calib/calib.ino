@@ -42,7 +42,8 @@ PCA9539 pca9539(0x77);
 const int NUM_VALVES = 12;
 float valveStates[NUM_VALVES]; // Stores valve states (0.0 to 1.0)
 // int calMin[NUM_VALVES] = {2420, 2420, 2420, 2420}; // min flow calibration (highest number)
-int calMin[NUM_VALVES] = {2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400};
+int calMinAll = 2000;
+int calMin[NUM_VALVES];
 int calMax[NUM_VALVES];    // max calibration values, define below using range from min (microseconds)
 const int calRange = 1000; // msec also, low to high
 
@@ -244,7 +245,7 @@ void setup()
   {
     solenoidDutyCycle[i] = solenoidDutyCycleInit;
     valveStates[i] = 0.0;
-    // calMin[i] = 2500;  // Default values
+    calMin[i] = calMinAll;  // Default values
     calMax[i] = calMin[i] - calRange; // Default values
 
     // enable and turn off solenoid outputs
