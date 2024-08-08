@@ -162,6 +162,31 @@ class LightCurveState:
         # The arguments structure is a convenient way to get information to patterns.
         self.args = args
 
+        # validate the solenoid and aperture maps, make sure every nozzle is mapped
+        solenoid_map = [-1] * self.nozzles
+        aperture_map = [-1] * self.nozzles
+
+        for c in self.controllers:
+            controller_s_map = c['solenoid_map']
+            controller_a_map = c['aperture_map']
+            for i in range(c['nozzles']):
+
+                # validate for range - these are not recoverable
+                if controller_s_map[i] >= self.nozzles:
+                    print(f' solenoid map entry out of range: controller {c['name']} entry {i} should be less than {self.nozzles}')
+                    raise Exception(" solenoid map entry out of range ")
+                if controller_a_map[i] >= self.nozzles:
+                    print(f' aperture map entry out of range: controller {c['name']} entry {i} should be less than {self.nozzles}')
+                    raise Exception(" aperture map entry out of range ")
+
+                # validate for duplicates - these are recoverable
+                if solenoid_map[controller_s_map[i]] != -1:
+                    print(f' solenoid map: duplicate entry: controller {c['name']} entry {i} value {controller_s_map[i]} is a dup')
+                solenoid_map[controller_s_map[i]] = controller_s_map[i]
+                if aperture_map[controller_a_map[i]] != -1:
+                    print(f' aperture map: duplicate entry: controller {c['name']} entry {i} value {controller_a_map[i]} is a dup')
+                aperture_map[controller_a_map[i]] = controller_a_map[i]
+
 
     def fill_apertures(self, val: float):
         self.s.apertures[:] = [val] * self.nozzles
@@ -192,6 +217,13 @@ class LightCurveTransmitter:
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
 
+
+
+# note about the mapping.
+# Each controller contains an array called "solenoid_map" and "aperture_map".
+# this becomes an indirection table.
+
+
     # call each time
     def transmit(self) -> None:
 
@@ -205,18 +237,26 @@ class LightCurveTransmitter:
             # fill in the artnet part
             _artnet_packet(ARTNET_UNIVERSE, self.sequence, packet)
 
+            aperture_map = c['aperture_map']
+            solenoid_map = c['solenoid_map']
+
             # fill in the data bytes
-            offset = c['offset']
             for i in range(c['nozzles']):
+
+                solenoid = solenoid_map [ i ]
+                aperture = aperture_map [ i ]
+
+                # print(f'c: {c['name']} packet solenoid {i} model solenoid {solenoid}')
+                # print(f'c: {c['name']} packet aperture {i} model aperture {aperture}')
 
                 # validation. Could make optional.
                 if (self.debug and 
-                        ( self.lc_state.s.solenoids[i+offset] < 0) or (self.lc_state.s.solenoids[i+offset] > 1)):
-                    print(f'active at {i+offset} out of range {self.lc_state.s.solenoids[i+offset]} skipping')
+                        ( self.lc_state.s.solenoids[solenoid] < 0) or (self.lc_state.s.solenoids[solenoid] > 1)):
+                    print(f'active at {i+offset} out of range {self.lc_state.s.solenoids[solenoid]} skipping')
                     return
                 if (self.debug and 
-                        (self.lc_state.s.apertures[i+offset] < 0.0) or (self.lc_state.s.apertures[i+offset] > 1.0)):
-                    print(f'flow at {i+offset} out of range {self.lc_state.s.apertures[i+offset]} skipping')
+                        (self.lc_state.s.apertures[aperture] < 0.0) or (self.lc_state.s.apertures[aperture] > 1.0)):
+                    print(f'flow at {i+offset} out of range {self.lc_state.s.apertures[aperture]} skipping')
 
 # FILTER
 # In the case where the solenoid and aperture are mapped to the same physical device,
@@ -228,9 +268,9 @@ class LightCurveTransmitter:
 #                    packet[ARTNET_HEADER_SIZE + (i*2) ] = 0
 #                else:
 
-                packet[ARTNET_HEADER_SIZE + (i*2) ] = self.lc_state.s.solenoids[i+offset]
+                packet[ARTNET_HEADER_SIZE + (i*2) ] = self.lc_state.s.solenoids[solenoid]
 
-                packet[ARTNET_HEADER_SIZE + (i*2) + 1] = math.floor(self.lc_state.s.apertures[i+offset] * 255.0 )
+                packet[ARTNET_HEADER_SIZE + (i*2) + 1] = math.floor(self.lc_state.s.apertures[aperture] * 255.0 )
 
             # transmit
             if self.debug:
@@ -585,7 +625,11 @@ def main():
 
     with Manager() as manager:
 
-        lc_state = LightCurveState(args, manager)
+        try:
+            lc_state = LightCurveState(args, manager)
+        except Exception as e:
+            print(f' Config file problem, exiting: {str(e)} ')
+            return
 
         # creates a transmitter background process that reads from the shared state
         transmitter_server_init(lc_state)
