@@ -96,6 +96,28 @@ opposite = [
     3,  4,  0,  1,  2,
 ]
 
+halos = [
+    # adjacent to lower star
+    [5, 6, 7, 8, 9],
+
+    # adjacent to lower diagonal stars
+    [4, 1, 11, 20, 18],
+    [0, 2, 13, 21, 10],
+    [1, 3, 15, 22, 12],
+    [2, 4, 17, 23, 14],
+    [3, 0, 19, 24, 16],
+
+    # adjacent to upper diagonal stars
+    [29, 26, 12, 5, 19],
+    [25, 27, 14, 6, 11],
+    [26, 28, 16, 7, 13],
+    [27, 29, 18, 8, 15],
+    [28, 25, 10, 9, 17],
+
+    # adjacent to upper star
+    [20, 21, 22, 23, 24],
+]
+
 ring_to_idx = {
     'lower_star': stars[0],
     'lower_diagonal': [5, 6, 7, 8, 9],
