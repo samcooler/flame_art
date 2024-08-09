@@ -173,18 +173,18 @@ class LightCurveState:
 
                 # validate for range - these are not recoverable
                 if controller_s_map[i] >= self.nozzles:
-                    print(f' solenoid map entry out of range: controller {c['name']} entry {i} should be less than {self.nozzles}')
+                    print(f' solenoid map entry out of range: controller {c["name"]} entry {i} should be less than {self.nozzles}')
                     raise Exception(" solenoid map entry out of range ")
                 if controller_a_map[i] >= self.nozzles:
-                    print(f' aperture map entry out of range: controller {c['name']} entry {i} should be less than {self.nozzles}')
+                    print(f' aperture map entry out of range: controller {c["name"]} entry {i} should be less than {self.nozzles}')
                     raise Exception(" aperture map entry out of range ")
 
                 # validate for duplicates - these are recoverable
                 if solenoid_map[controller_s_map[i]] != -1:
-                    print(f' solenoid map: duplicate entry: controller {c['name']} entry {i} value {controller_s_map[i]} is a dup')
+                    print(f' solenoid map: duplicate entry: controller {c["name"]} entry {i} value {controller_s_map[i]} is a dup')
                 solenoid_map[controller_s_map[i]] = controller_s_map[i]
                 if aperture_map[controller_a_map[i]] != -1:
-                    print(f' aperture map: duplicate entry: controller {c['name']} entry {i} value {controller_a_map[i]} is a dup')
+                    print(f' aperture map: duplicate entry: controller {c["name"]} entry {i} value {controller_a_map[i]} is a dup')
                 aperture_map[controller_a_map[i]] = controller_a_map[i]
 
 
