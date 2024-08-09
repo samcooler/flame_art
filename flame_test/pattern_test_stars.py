@@ -4,7 +4,7 @@
 
 import flame_test as ft
 from time import sleep
-import utils as u
+import face_groupings as g
 
 sleep_between = 0.3
 
@@ -14,7 +14,7 @@ def pattern_test_stars(state: ft.LightCurveState) -> bool:
     state.fill_apertures(1.0)
 
     # Pattern
-    for star in u.stars:
+    for star in g.stars:
         for nozzle in star:
             state.s.solenoids[nozzle] = 1
 

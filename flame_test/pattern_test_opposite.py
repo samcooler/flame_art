@@ -4,7 +4,7 @@
 
 import flame_test as ft
 from time import sleep
-import utils as u
+import face_groupings as g
 
 sleep_between = 0.3
 
@@ -16,10 +16,10 @@ def pattern_test_opposite(state: ft.LightCurveState) -> bool:
     # Pattern
     for i in range(0, 30):
         state.s.solenoids[i] = 1
-        state.s.solenoids[u.opposite[i]] = 1
+        state.s.solenoids[g.opposite[i]] = 1
         sleep(sleep_between)
         state.s.solenoids[i] = 0
-        state.s.solenoids[u.opposite[i]] = 0
+        state.s.solenoids[g.opposite[i]] = 0
 
     # End
     state.fill_solenoids(0)

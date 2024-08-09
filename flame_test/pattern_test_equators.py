@@ -4,7 +4,7 @@
 
 import flame_test as ft
 from time import sleep
-import utils as u
+import face_groupings as g
 
 sleep_between = 0.3
 
@@ -14,7 +14,7 @@ def pattern_test_equators(state: ft.LightCurveState) -> bool:
     state.fill_apertures(1.0)
 
     # Pattern
-    for equator in u.equators:
+    for equator in g.equators:
         for nozzle in equator:
             state.s.solenoids[nozzle] = 1
 
