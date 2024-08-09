@@ -466,7 +466,7 @@ def osc_server(lc_state: LightCurveState, address: str):
     except KeyboardInterrupt: # swallow silently
         pass
 
-def osc_server_init(lc_state, args):
+def osc_server_init(lc_state: LightCurveState, args):
     global OSC_PROCESS
 
     # decide the address to listen on
@@ -564,6 +564,7 @@ def pattern_execute(pattern: str, lc_state) -> bool:
 
     return True
 
+
 def pattern_insert(pattern_name: str, pattern_fn):
     PATTERN_FUNCTIONS[pattern_name] = pattern_fn
 
@@ -580,6 +581,63 @@ def pattern_multipattern(state: LightCurveState):
 
     print(f'Ending multipattern pattern')
 
+
+# format of a JSON file which describes a playlist:
+# [ 
+#   { "name": "nameofpattern",
+#       "duration": 40,
+#       "nozzel": n
+#       "delay" : delay
+#       "group" : group
+#    },
+#    ...
+#    ]
+
+# these will be copied to the pattern if they exist
+
+PATTERN_PARAMETERS = [ "nozzle", "delay", "group" ]
+
+def execute_list(args, state: LightCurveState):
+
+    # load config file
+    with open(args.list) as playlist_f:
+        playlist = json.load(playlist_f)  # XXX catch exceptions here.
+
+    # validate file
+
+    for idx, p in enumerate(playlist):
+        if 'name' not in p:
+            print(f'playlist: entry {idx} has no name, exiting ')
+            return
+        if p["name"] not in PATTERN_FUNCTIONS:
+            print(f'playlist: entry {idx} name {p["name"]} is not a valid pattern name, exiting')
+            return
+        if 'duration' not in p:
+            print(f'playlist: entry {idx} name {p["name"]} has no duration, exiting ')
+            return
+
+    for p in playlist:
+        # replace the parameters if available
+        for param in PATTERN_PARAMETERS:
+            if param in p:
+                print(f'Found {param} in {p["name"]} replacing with {p[param]}')
+                setattr(state.args, param, p[param])
+            else:
+                setattr(state.args, param, None)
+ 
+
+        print(f' starting pattern {p["name"]} for {p["duration"]} seconds')
+
+        pattern_process = Process(target=PATTERN_FUNCTIONS[p["name"]], args=(state,) )
+        pattern_process.start()
+        pattern_process.join(timeout=p["duration"])
+        if pattern_process.is_alive():
+            pattern_process.terminate()
+            sleep(0.1)
+
+        print(f' starting finished pattern {p["name"]}')
+
+
 #
 #
 
@@ -591,6 +649,8 @@ def args_init():
     parser.add_argument('--address', '-a', default="0.0.0.0", type=str, help=f'address to listen OSC on defaults to broadcast on non-loop')
     parser.add_argument('--fps', '-f', default=15, type=int, help='frames per second')
     parser.add_argument('--repeat', '-r', default=9999, type=int, help="number of times to run pattern")
+
+    parser.add_argument('--list', '-l', default="", type=str, help="List: file of patterns to play (overrides pattern)")
 
     # some patterns use optional arguments, but they can also share.
     parser.add_argument('--nozzle', '-n', type=int, help="pattern specific: nozzel to apply to")
@@ -640,11 +700,17 @@ def main():
         osc_server_init(lc_state, args)
 
 
-
-        # run it bro
         try:
-            for _ in range(args.repeat):
-                pattern_execute(args.pattern, lc_state)
+
+            # if there's a playlist (list) play it, otherwise, play the pattern
+            if (args.list != ""):
+                execute_list(args, lc_state)
+
+            else:
+
+                # run it bro
+                    for _ in range(args.repeat):
+                        pattern_execute(args.pattern, lc_state)
 
         except KeyboardInterrupt: # be silent in this case
             pass

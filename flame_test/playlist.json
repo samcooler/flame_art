@@ -1,0 +1,20 @@
+[
+    {
+        "name": "fast",
+        "duration": 10
+    },
+    {
+        "name": "poof",
+        "duration": 20,
+        "nozzle": 1,
+        "group": 5
+    },
+    {
+        "name": "poof",
+        "duration": 20
+    },
+    {
+        "name": "wave",
+        "duration": 90
+    }
+]
