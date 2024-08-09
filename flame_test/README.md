@@ -78,3 +78,23 @@ In the case of using the simulator, this filter creates an unusual effect. Inste
 # The on state
 
 Because an HSI is used, there is a small period of time after opening the aperture or solinoid before it lights. The currently observed value is much less than a second, but it does exist. We expect this value to get smaller.
+
+
+
+# Nozzle Mapping
+Here's how we identify individual faces within the rhombic triacontahedron. First a textual explanation then images.
+* The triacontahedron is oriented with a 5-sided vertex at the top and bottom.
+* The "front" of the triacontahedron is such that you are in line with one of the 5 downard facing nozzles, i.e. a nozzle is shooting toward your feet (as opposed to between 2 of those nozzles).
+* The order goes through goes through 5 different "rings" of faces, each on the same horizontal level, which are as follows:
+    1. The five faces forming a pentagonal pyramid facing downward.
+    2. The five faces facing diagonal-downward just above the first pyramid.
+    3. The ten faces going all around the center of the triacontahedron forming a horizontal ring facing outwards.
+    4. The five faces facing diagonal-upward just above the ring of 10.
+    5. The five faces forming a pentagonal pyramid facing upward.
+* Within each ring, the order is clockwise if you are on the ground facing up at the triacontahedron, or counter-clockwise if you are in the sky facing down on the triacontahedron.
+* The first face within each ring is the one facing directly toward you (if there is one) or the one just to the right of center (if there isn't one facing toward you).
+
+In these images, the gray cylinder represents the shaft attaching the star to the rest of the sculpture. The colors of the faces are random, only to help see the division between faces, and not necessarily the same across these screenshots unfortunately.
+|Bottom view|Front view|Top view|
+|:----:|:----:|:----:|
+| ![Screenshot 2024-08-07 202956](https://github.com/user-attachments/assets/28e5a125-be3d-4c77-8600-9c98bf4ab902) | ![Screenshot 2024-08-07 202824](https://github.com/user-attachments/assets/93e34b2e-ca68-47d7-86d3-c4338ca157d4) | ![Screenshot 2024-08-08 180046 (smaller)](https://github.com/user-attachments/assets/d1cf3253-65dc-490e-b15f-4c30dbbc4e2e) |
