@@ -1,22 +1,37 @@
 #!/usr/bin/env python3
 
 
-# WARNING has syntax that is python 3
-# you will see strange looking errors in Python2
-# not sure exactly which python is required...
+# Generally coded with python 3.12, but also works with Python 3.10,
+# as one of the older laptops we use is Ubuntu w
 
-# using the pyartnet module for sending artnet. Might almost
-# be easier to hand-code it, it's a very simple protocol
+# general theory
+#
+# Allow patterns to be created with the file suffix "pattern".
+# they will be detected and executing with -p will cause that code to run.
+#
+# Also have a playlist, which is a simple JSON file allowing a list of patterns and times.
+#
+# Four processes are used. Processes are used to avoid latency that could be caused using
+# multithreading. A badly written pattern could cause execution issues where OSC commands
+# wouldn't be read, or packets to the controllers wouldn't be sent.
 
-# Because packet might be lost or the wifi might be offline, it's
-# important to output a steady stream of packets at a given frame rate.
-# use a separate thread for that.
-
-# use another thread for actually changing the values.
-
-# to write a pattern, write 
-
-# see readme for definition of the device
+# Main process - starts with main, launches all other processes, and in the case of direct
+# pattern execution, runs the pattern
+# OSC process - after trying several libraries that claimed to be non-blocking, the most
+# commonly used OSC process works best with blocking.
+# Xmit process - sends artnet packets
+#
+# In order to coordinate between processes, shared memory is used. A single shared memory manager
+# is created by the main process, and that manager is used to create the coordination
+# data structures, which are in the "LightCurveState" shared namespace. This should be efficient,
+# although it depends slightly on the implementaiton characteristics of the underlying python
+# system. This code is intended to run on a raspberry pi with 10's of milliseconds of accuracy,
+# the access to more cores should offset the synchronization overhead of shared memory.
+#
+# A configuration file is used to state how many controllers and their addresses and characteristics
+# including an indirection mapping file.
+#
+# A playlist file is a simple list of json objects with names and durations.
 
 ### NOTE:
 ### The configuration file allows specification of the complete number of nozzles
