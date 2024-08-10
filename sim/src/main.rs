@@ -11,6 +11,7 @@ const OSC_PORT: u16 = 6512;
 
 struct Face {
     center_vector: Vector3<f32>,
+    normalized_center_vector: Vector3<f32>,
     fire_cone: SceneNode,
     switch: bool,
     flow: f32,
@@ -63,6 +64,9 @@ impl Face {
 
         Self {
             center_vector: quaternion_to_rotate_5_pyramid_to_top.transform_vector(&center_vector),
+            normalized_center_vector: quaternion_to_rotate_5_pyramid_to_top
+                .transform_vector(&center_vector)
+                .normalize(),
             fire_cone,
             switch: false,
             flow: 1.,
@@ -192,12 +196,12 @@ fn main() {
         receive_artnet(&mut faces, &artnet_socket);
         receive_osc(&osc_socket, &mut gravity);
         faces.iter_mut().for_each(|face| {
+            let target_concentration = 2.0 - face.flow;
             // Update concentration
             if face.switch {
                 // Decay concentration to the flow value
-                let target_concentration = 2.0 - face.flow;
                 face.concentration =
-                    face.concentration + (target_concentration - face.concentration) * 0.1;
+                    face.concentration + (target_concentration - face.concentration) * 0.2;
             } else {
                 // Decay concentration to zero
                 face.concentration *= 0.97;
@@ -209,16 +213,28 @@ fn main() {
             );
 
             // Render
-            let scale = 1. + (1. - face.concentration).powi(3);
+            let scale = 2. - face.concentration;
+            let max_visible_scale = face.flow + 0.4;
             face.fire_cone.set_local_scale(scale, scale * 2., scale);
-            face.fire_cone
-                .set_local_translation(Translation3::from(face.center_vector * (0.5 + scale)));
+            face.fire_cone.set_local_translation(Translation3::from(
+                face.center_vector + face.normalized_center_vector * scale,
+            ));
             face.fire_cone
                 .append_translation(&Translation3::new(0., shaft_len, 0.));
-            let color_strength = (face.concentration / face.flow).powi(3).min(1.).max(0.);
+
+            // face.concentration - target_concentration
+            // max_visible_scale - scale / ((2. - target_concentration) * 0.5)
+
+            let color_strength = if face.switch {
+                1.
+            } else {
+                (face.concentration / target_concentration)
+                    .powi(5)
+                    .clamp(0., 1.)
+            };
             face.fire_cone
                 .set_color(color_strength, 0.8 * color_strength, 0.2 * color_strength);
-            face.fire_cone.set_visible(scale < 1.2);
+            face.fire_cone.set_visible(scale < max_visible_scale);
         });
     }
 }
