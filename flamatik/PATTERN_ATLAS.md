@@ -32,12 +32,12 @@ This document is not guaranteed to be exhaustive documentation of the patterns, 
 - These are mainly to test some util functions, and usually take the form of iterating across all combinations of the specified grouping.
 - These may be artistically interesting, but since the order is always the same, they might not be as good as the `random` patterns.
 - Examples:
-  - Groupings:
+  - Groupings (sets of multiple geometrically-determined sets of faces/nozzles):
     - `test_stars` poofs all 12 of the "stars" that exist on the triacontahedron, which are the sets of 5 faces that come together in a point, forming a 5-sided pyramid.
     - `test_halos` is similar to `test_stars` except it poofs the 12 "halos", which are rings of 5 faces adjacent to a star, kind of diagonal.
     - `test_equators` is similar to `test_stars` except it poofs the 6 "equators", which are rings of 10 faces that divide the triacontahedron into two "hemispheres".
     - `test_triples` is similar to `test_stars` except it poofs the 20 "triples", which are sets of 3 faces that come together in a point, forming a (very shallow) 3-sided pyramid. An interesting note is that since the 3-sided pyramids are so shallow, these 3 nozzles face almost the same direction, forming more of a "triple poof" in the sameish direction.
-  - Index-based:
+  - Index-based (relations of a given face):
     - `test_opposite` goes through the faces in index order and for each one, poofs both the face and the face facing the opposite direction.
     - `test_neighbors` goes through the faces in index order and for each one, poofs the 4 adjacent faces.
     - `test_orthogonals` is like `test_neighbors` but does the 4 faces that are at a right angle to each face.
