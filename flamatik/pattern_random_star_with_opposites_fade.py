@@ -15,7 +15,7 @@ min_aperture = 0.1
 max_aperture = 1.0
 aperture_range = max_aperture - min_aperture
 
-def pattern_random_stars(state: ft.LightCurveState) -> bool:
+def pattern_random_star_with_opposites_fade(state: ft.LightCurveState) -> bool:
     state.fill_solenoids(0)
     state.fill_apertures(min_aperture)
 
@@ -24,21 +24,27 @@ def pattern_random_stars(state: ft.LightCurveState) -> bool:
     # Open solenoids for selected star
     for nozzle in g.stars[star_index]:
         state.s.solenoids[nozzle] = 1
+        state.s.solenoids[g.opposite[nozzle]] = 1
 
     # Grow
     for progress in range(frames_per_period):
         prog = progress / frames_per_period
         for nozzle in g.stars[star_index]:
-            state.s.apertures[nozzle] = min_aperture + prog * aperture_range
+            ap = min_aperture + prog * aperture_range
+            state.s.apertures[nozzle] = ap
+            state.s.apertures[g.opposite[nozzle]] = ap
         sleep(poof_period / frames_per_period)
 
     # Shrink
     for progress in range(frames_per_period):
         prog = progress / frames_per_period
         for nozzle in g.stars[star_index]:
-            state.s.apertures[nozzle] = max_aperture - prog * aperture_range
+            ap = max_aperture - prog * aperture_range
+            state.s.apertures[nozzle] = ap
+            state.s.apertures[g.opposite[nozzle]] = ap
         sleep(poof_period / frames_per_period)
 
     # Close solenoids for selected star
     for nozzle in g.stars[star_index]:
         state.s.solenoids[nozzle] = 0
+        state.s.solenoids[g.opposite[nozzle]] = 0
