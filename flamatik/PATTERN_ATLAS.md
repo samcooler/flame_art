@@ -33,14 +33,14 @@ This document is not guaranteed to be exhaustive documentation of the patterns, 
 - These may be artistically interesting, but since the order is always the same, they might not be as good as the `random` patterns.
 - Examples:
   - Groupings:
-    - `pattern_test_stars` poofs all 12 of the "stars" that exist on the triacontahedron, which are the sets of 5 faces that come together in a point, forming a 5-sided pyramid.
-    - `pattern_test_halos` is similar to `pattern_test_stars` except it poofs the 12 "halos", which are rings of 5 faces adjacent to a star, kind of diagonal.
-    - `pattern_test_equators` is similar to `pattern_test_stars` except it poofs the 6 "equators", which are rings of 10 faces that divide the triacontahedron into two "hemispheres".
-    - `pattern_test_triples` is similar to `pattern_test_stars` except it poofs the 20 "triples", which are sets of 3 faces that come together in a point, forming a (very shallow) 3-sided pyramid. An interesting note is that since the 3-sided pyramids are so shallow, these 3 nozzles face almost the same direction, forming more of a "triple poof" in the sameish direction.
+    - `test_stars` poofs all 12 of the "stars" that exist on the triacontahedron, which are the sets of 5 faces that come together in a point, forming a 5-sided pyramid.
+    - `test_halos` is similar to `test_stars` except it poofs the 12 "halos", which are rings of 5 faces adjacent to a star, kind of diagonal.
+    - `test_equators` is similar to `test_stars` except it poofs the 6 "equators", which are rings of 10 faces that divide the triacontahedron into two "hemispheres".
+    - `test_triples` is similar to `test_stars` except it poofs the 20 "triples", which are sets of 3 faces that come together in a point, forming a (very shallow) 3-sided pyramid. An interesting note is that since the 3-sided pyramids are so shallow, these 3 nozzles face almost the same direction, forming more of a "triple poof" in the sameish direction.
   - Index-based:
-    - `pattern_test_opposite` goes through the faces in index order and for each one, poofs both the face and the face facing the opposite direction.
-    - `pattern_test_neighbors` goes through the faces in index order and for each one, poofs the 4 adjacent faces.
-    - `pattern_test_orthogonals` is like `pattern_test_neighbors` but does the 4 faces that are at a right angle to each face.
+    - `test_opposite` goes through the faces in index order and for each one, poofs both the face and the face facing the opposite direction.
+    - `test_neighbors` goes through the faces in index order and for each one, poofs the 4 adjacent faces.
+    - `test_orthogonals` is like `test_neighbors` but does the 4 faces that are at a right angle to each face.
 
 ## Random patterns
 
@@ -48,29 +48,29 @@ This document is not guaranteed to be exhaustive documentation of the patterns, 
 - These generally only do a single random one, so if you want it to repeat, do so using the command line (e.g. `-r 10` for 10 repetitions).
 - Examples:
   - Fades:
-    - `pattern_random_star_fade` does a slow fade-up then fade-down of a randomly-chosen star.
-    - `pattern_random_star_with_opposites_fade` does a slow fade-up then fade-down of a randomly-chosen star, as well as the star facing the other way.
+    - `random_star_fade` does a slow fade-up then fade-down of a randomly-chosen star.
+    - `random_star_with_opposites_fade` does a slow fade-up then fade-down of a randomly-chosen star, as well as the star facing the other way.
   - Poofs:
-    - `pattern_random_star_poof` does a poof of a randomly-chosen star.
-    - `pattern_random_star_with_opposites_poof` does a poof of a randomly-chosen star.
+    - `random_star_poof` does a poof of a randomly-chosen star.
+    - `random_star_with_opposites_poof` does a poof of a randomly-chosen star.
 
 ## Solenoid-friendly patterns
 
 - In case the apertures (servo valves) aren't working, here are some patterns that don't rely on the apertures.
 - Generally they just set all apertures to full open then do poofs with solenoids.
 - List:
-  - `pattern_comet`
-  - `pattern_rings`
-  - `pattern_random_equator_spin_poof`
-  - `pattern_random_star_poof`
-  - `pattern_random_star_with_opposites_poof`
-  - `pattern_fast`
-  - `pattern_test_opposite`
-  - `pattern_test_halos`
-  - `pattern_test_equators`
-  - `pattern_test_stars`
+  - `comet`
+  - `rings`
+  - `random_equator_spin_poof`
+  - `random_star_poof`
+  - `random_star_with_opposites_poof`
+  - `fast`
+  - `test_opposite`
+  - `test_halos`
+  - `test_equators`
+  - `test_stars`
 
 ## Misc/performance patterns
 
-- `pattern_rings` - poofs all faces in rings from bottom to top, doing the ones on the same horizontal ring at the same time.
-- `pattern_comet` - poofs a random slice of adjacent faces in order, from a randomly chosen equator
+- `rings` - poofs all faces in rings from bottom to top, doing the ones on the same horizontal ring at the same time.
+- `comet` - poofs a random slice of adjacent faces in order, from a randomly chosen equator
