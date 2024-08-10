@@ -6,6 +6,13 @@
 #   2. Order not important. E.g. stars or equators. These are a list of groupings of all face
 #      groupings of that type, in no particular order.
 
+# Helper that simply gives you an array of all nozzles
+all_nozzles = [
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+    10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+    20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
+]
+
 # The reverse face from the index. E.g. the index of the opposite of face 9 is at index 9 in this array.
 opposite = [
     27, 28, 29, 25, 26,                     # lower star

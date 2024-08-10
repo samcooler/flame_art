@@ -74,3 +74,12 @@ This document is not guaranteed to be exhaustive documentation of the patterns, 
 
 - `rings` - poofs all faces in rings from bottom to top, doing the ones on the same horizontal ring at the same time.
 - `comet` - poofs a random slice of adjacent faces in order, from a randomly chosen equator
+
+## IMU based patterns
+
+- `equator_imu_single`
+  - Turns on the solenoid from the equator closest to the direction the IMU is facing.
+  - Should have the effect of shooting fire kinda toward the ground closest to whichever way the arm is tilting.
+- `equator_imu_ortho`
+  - Turns on the 2 solenoids within the equator which are (nearly) perpendicular to the face closest to the direction the IMU is facing.
+  - Should have the effect of shooting fire roughly parallel to the ground, based on whichever way the arm is tilting.
