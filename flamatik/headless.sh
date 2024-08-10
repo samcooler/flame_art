@@ -1,0 +1,1 @@
+python flamatik.py -c lightcurve.cnf -l playlist.json
