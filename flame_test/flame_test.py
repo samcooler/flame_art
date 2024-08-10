@@ -83,7 +83,6 @@ NOZZLE_BUTTON_LEN = 30
 CONTROL_BUTTON_LEN = 3
 
 debug = False
-ARGS = None
 
 # artnet packet format: ( 18 bytes )
 # 8 bytes header: 'Art-Net0'
@@ -152,6 +151,7 @@ class LightCurveState:
 
         self.controllers = args.controllers
         self.nozzles = args.nozzles
+        self.nozzle_calibration = args.nozzle_calibration
 
 # not quite sure if I need a shared namespace or a simple namespace will do.
 # if all the objects in the namespace are themselves shared, then a simple namespace should work.
@@ -231,7 +231,17 @@ class LightCurveTransmitter:
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # UDP
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
+    # this takes the 0 to 1 value from the pattern,
+    # applies the per nozzle calibration, and returns the corrected
+    # value for sending to the controller, using the table 
+    # in the config file
 
+    def nozzle_apply_calibration(self, nozzle: int, val: float ) -> float:
+
+        correction = self.lc_state.nozzle_calibration[str(nozzle)]
+        start = correction[0]
+        stop = correction[1]
+        return ((stop-start) * val) + start
 
 
 # note about the mapping.
@@ -285,7 +295,7 @@ class LightCurveTransmitter:
 
                 packet[ARTNET_HEADER_SIZE + (i*2) ] = self.lc_state.s.solenoids[solenoid]
 
-                packet[ARTNET_HEADER_SIZE + (i*2) + 1] = math.floor(self.lc_state.s.apertures[aperture] * 255.0 )
+                packet[ARTNET_HEADER_SIZE + (i*2) + 1] = math.floor(self.nozzle_apply_calibration( aperture, self.lc_state.s.apertures[aperture] ) )
 
             # transmit
             if self.debug:
@@ -679,6 +689,7 @@ def args_init():
         conf = json.load(ftc_f)  # XXX catch exceptions here.
         args.controllers = conf['controllers']
         args.nozzles = conf['nozzles']
+        args.nozzle_calibration = conf['nozzle_calibration']
 
     return args
 
@@ -687,16 +698,12 @@ def args_init():
 
 def main():
 
-    global ARGS
-
-    print("Pytnon version", sys.version)
-
     import_patterns()
     pattern_insert('multipattern', pattern_multipattern)
 
     args = args_init()
 
-    if args.pattern not in PATTERN_FUNCTIONS:
+    if (args.list != "") and (args.pattern not in PATTERN_FUNCTIONS):
         print(f' pattern must be one of {patterns()}')
         return
 
