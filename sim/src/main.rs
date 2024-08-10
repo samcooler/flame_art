@@ -167,9 +167,15 @@ fn main() {
     window.set_light(Light::StickToCamera);
 
     let mut arc_ball_camera = ArcBall::new(
-        Point3::new(0.0f32, 0., 25.),
-        Point3::new(0.0f32, shaft_len / 2., 0.0f32),
+        Point3::new(0.0f32, shaft_len * 1.5, 10.),
+        Point3::new(0.0f32, shaft_len, 0.0f32),
     );
+
+    // Uncomment to simulate standing on the ground looking up at the sculpture
+    // let mut arc_ball_camera = ArcBall::new(
+    //     Point3::new(0.0f32, 0., 25.),
+    //     Point3::new(0.0f32, shaft_len / 2., 0.0f32),
+    // );
 
     let artnet_socket = create_socket(ARTNET_PORT);
     let osc_socket = create_socket(OSC_PORT);
@@ -189,7 +195,9 @@ fn main() {
             // Update concentration
             if face.switch {
                 // Decay concentration to the flow value
-                face.concentration = face.concentration + (face.flow - face.concentration) * 0.1;
+                let target_concentration = 2.0 - face.flow;
+                face.concentration =
+                    face.concentration + (target_concentration - face.concentration) * 0.1;
             } else {
                 // Decay concentration to zero
                 face.concentration *= 0.97;
