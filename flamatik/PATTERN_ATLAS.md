@@ -24,10 +24,7 @@ This document is not guaranteed to be exhaustive documentation of the patterns, 
 
 - `pulse` - aperture pattern. Starts off, and turns the sculpture on over `delay` period, then all the way off (sawtooth pulse)
 
-- `fast` - Eric?
-
-- `rings` - Eric?
-
+- `fast` - poofs all the faces, in index order
 
 ## Test patterns
 
@@ -57,7 +54,7 @@ This document is not guaranteed to be exhaustive documentation of the patterns, 
     - `pattern_random_star_poof` does a poof of a randomly-chosen star.
     - `pattern_random_star_with_opposites_poof` does a poof of a randomly-chosen star.
 
-## Solenoid-heavy patterns
+## Solenoid-friendly patterns
 
 - In case the apertures (servo valves) aren't working, here are some patterns that don't rely on the apertures.
 - Generally they just set all apertures to full open then do poofs with solenoids.
@@ -72,3 +69,8 @@ This document is not guaranteed to be exhaustive documentation of the patterns, 
   - `pattern_test_halos`
   - `pattern_test_equators`
   - `pattern_test_stars`
+
+## Misc/performance patterns
+
+- `pattern_rings` - poofs all faces in rings from bottom to top, doing the ones on the same horizontal ring at the same time.
+- `pattern_comet` - poofs a random slice of adjacent faces in order, from a randomly chosen equator
