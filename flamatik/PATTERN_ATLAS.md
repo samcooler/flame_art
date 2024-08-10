@@ -4,6 +4,31 @@ This document intends to organize the patterns somewhat and provide some idea of
 
 This document is not guaranteed to be exhaustive documentation of the patterns, it just serves to help with a mental model of "types" of patterns, which should hopefully be somewhat self-explanatory from the patterns' names.
 
+## Basic test patterns
+
+- `start` - turns on solenoids and apertures and leaves them on
+
+- `stop` - turns off everything, over and over. Good for safety.
+
+- `poof` - solenoid pattern. Turn on and off a group (default size 1) of nozzels. `nozzle` , and `group` , and `delay` .
+
+- `unpoof` - solenoid pattern. The opposite of poof - turns everything on, then turns off a `group` of `nozzles`
+
+- `appoof` - aperture pattern. Uses the apertures to supply poofs just like the `poof` pattern - turns on and off a group, but using 0 to 1 in apertures.
+
+- `group` - solenoid pattern. starting with `nozzle` turn on a group of `group` size for `delay` period, then keep walking through the nozzles
+
+- `soliwave` - solinoid pattern. Using a width of `group`, walk through the nozzeles in order, adding and subtracting one every `delay`
+
+- `multiwave` - aperture pattern. Applies a wave of certain width to a group, and walks through the sculpture linearly. May not support parameters yet?
+
+- `pulse` - aperture pattern. Starts off, and turns the sculpture on over `delay` period, then all the way off (sawtooth pulse)
+
+- `fast` - Eric?
+
+- `rings` - Eric?
+
+
 ## Test patterns
 
 - There are several patterns that start with "test" (e.g. "pattern_test_equators").
