@@ -189,7 +189,9 @@ fn main() {
             // Update concentration
             if face.switch {
                 // Decay concentration to the flow value
-                face.concentration = face.concentration + (face.flow - face.concentration) * 0.1;
+                let target_concentration = 2.0 - face.flow;
+                face.concentration =
+                    face.concentration + (target_concentration - face.concentration) * 0.1;
             } else {
                 // Decay concentration to zero
                 face.concentration *= 0.97;
