@@ -3,7 +3,7 @@
 # Author: chatgpt at the instruction of Sam Cooler as translated into python by BB
 
 # want the globals and helper functions from flametest
-import flame_test as ft
+import flamatik as ft
 from time import sleep
 
 # multiwave controls the apertures

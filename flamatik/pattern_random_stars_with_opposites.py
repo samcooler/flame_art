@@ -3,7 +3,7 @@
 # Author: Eric Harper-Gauderman
 
 import random
-import flame_test as ft
+import flamatik as ft
 from time import sleep
 import face_groupings as g
 

@@ -3,7 +3,7 @@
 # Author: Brian Bulkowski brian@bulkowski.org
 
 # want the globals and helper functions from flametest
-import flame_test as ft
+import flamatik as ft
 from time import sleep
 
 def pattern_stop(state: ft.LightCurveState) -> bool:
