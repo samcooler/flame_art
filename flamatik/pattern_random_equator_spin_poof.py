@@ -12,7 +12,7 @@ def pattern_random_equator_spin_poof(state: ft.LightCurveState) -> bool:
     state.fill_solenoids(0)
     state.fill_apertures(1.0)
 
-    equator_index = random.randint(1, len(g.equators)) - 1
+    equator_index = random.randint(0, len(g.equators) - 1)
 
     # Repeat 3 times cause it's cool
     for _ in range(3):
