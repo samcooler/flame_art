@@ -14,17 +14,18 @@ cargo run
 
 The simulator takes over the artnet port.
 
-# Run a test program
+# Run the fire
 
-Make sure python is a recent version, and `pip install importlib`
+Make sure python is a recent version (3.12 preferred, 3.10 likely to work), and `pip install -r requirements.txt`
 
 ```
-cd flame_test
-python flame_test.py -c sim_test.cnf
+cd flamatik
+python flamatik.py -c sim_test.cnf
 ```
 
-This runs a basic test pattern (pulse). Please see the help ( python flame_test.py --help )
-and the readme in that directory.
+This runs a basic pattern (pulse). Please see the help ( python flame_test.py --help )
+and the readme in that directory for information about the different patterns
+available, and how to build and run a playlist.
 
 # Configurations and passwords
 
@@ -116,17 +117,19 @@ This means a given *face* on the sculpture will map randomly to a solenoid / val
 
 There is a `raw` map of nozzels, which is how they are attached to the controllers, then there is a configured map to the scheme that pattern developers use.
 
-In our implementation, this map is done in `flame_test` configuration. Please see the `flame_test` documentation for more details.
+In our implementation, this map is done in `flamatik` configuration. 
+
+Please see the `flamatik` README for more details.
 
 ## Aperture calibration
 
 The pattern developers will write in "0.0" to "1.0" intensity of flame for apertures, but the servos themselves need to be calibrated.
 
-This calibration mapping exists in `flame_test` because that's the code that outputs the Artnet.
+This calibration mapping exists in `flamatik` because that's the code that outputs the Artnet.
 
-It would also be sensible for the controller to have a calibration table, and 0..255 in Artnet to be "full range", but we decided to put the calibration in `flame_test` because it's easier to update.
+It would also be sensible for the controller to have a calibration table, and 0..255 in Artnet to be "full range", but we decided to put the calibration in `flamatik` because it's easier to update.
 
-Therefore, 0..255 maps to (essentially) full range of the servo, and pattern writers will use 0 .. 1.0 , but there is a calibration table in `flame_test` which will trim the ends, what you'll see for "full on"
+Therefore, 0..255 maps to (essentially) full range of the servo, and pattern writers will use 0 .. 1.0 , but there is a calibration table in `flamatik` which will trim the ends, what you'll see for "full on"
 will have a different range. Eg, 14 might be off, and 250 might be full on, for a given servo.
 
-Please see the `flame_test` readme for how to configure this.
+Please see the `flamatik` readme for how to configure this.

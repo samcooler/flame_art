@@ -1,6 +1,7 @@
-# Flame Test
+# Flamatik
 
-This directory has basic test patterns for Light Curve.
+This is the program to run the LightCurve structure, including a rich set of patterns. 
+It was originally a test framework, then it grew up.
 
 It interacts directly with the controllers. There are 3 esp32 based controllers, each
 with 10 flame jets.
@@ -20,13 +21,17 @@ On windows, you may need to required the C++ build tools in order to get the too
 
 # Patterns
 
-The test code is written in python. The code is written to python 3.10-ish which is common
+The pattern code is written in python. The code is written to python 3.10-ish which is common
 around the time we are writing.
 
-To add a new test pattern, copy one of the files such as `pattern_pulse.py` to a new file.
+To add a new pattern, copy one of the files such as `pattern_pulse.py` to a new file.
 Change the name of the single function `def pattern_pulse` to the same name as the file.
+All else should be pretty obvious.
 
 Change the pattern to so what you'd like. Use delays or time to update the array of `solinoid` and `aperture`.
+
+There are a set of helper geometry files such as `face_groupings.py` and `geometry_math.py` . They
+contain vectors and location information for the nozzels in lightcurve.
 
 # Mapping and configuration of nozzles
 
@@ -57,7 +62,7 @@ There isn't a huge amount of resolution in the physical system, maybe about 100 
 Each servo and needle valve head is slightly different. Therefore "full off" might be 0, or it might be 5, or it might be 10. It's
 pretty important to get these values right, to avoid jamming the servo and causing failure.
 
-This calibration is done in `flame_test` . There is a configuration table that maps the abstract range to the physical range.
+This calibration is done in `flamatik` . There is a configuration table that maps the abstract range to the physical range.
 
 The table in the configuration file is called `aperture_calibration` . ** It has a tuple which is the start and stop range. ** These are represented
 as `float` (although more properly they might be `int`).
@@ -75,24 +80,19 @@ by reading through the controllers and finding where the value 7 is located.
 
 Therefore, the pattern developer puts a value like 0.5 for nozzel 7.
 
-`flame_test` normalizes 0.5 , which means half way between 5.0 and 100.0, to 52.5, and rounds down to 52.
+`flamatik` normalizes 0.5 , which means half way between 5.0 and 100.0, to 52.5, and rounds down to 52.
 
-Then when the `flame_test` code is outputting values to board 2, it finds the 4th value in the output
+Then when the `flamatik` code is outputting values to board 2, it finds the 4th value in the output
 ArtNet fixture configuration is nozzle 7 , so it places the value 52 in the 8th byte (because solenoids and apertures are interleaved). 
 
 
 # The off state
 
-Since the calibration is not yet perfect, there is a small bit of code that also turns the solenoid off for a small aperture. This value can be played with, or eventually removed,
-if the calibration is better or if the controller software takes on this capability.
+We considered, at one point, that turning the aperture off, and the solnoid on, we should probably also turn the solinoid off, to avoid leakage etc.
 
-In the case of using the simulator, this filter creates an unusual effect. Instead of seeing the value decrease , there is a crisp shutoff when you are still asking for flow.
+This code was removed for a bit, it might come back.
 
-# The on state
-
-Because an HSI is used, there is a small period of time after opening the aperture or solinoid before it lights. The currently observed value is much less than a second, but it does exist. We expect this value to get smaller.
-
-# Nozzle Mapping
+# Nozzle Locations and Mapping
 
 Here's how we identify individual faces within the rhombic triacontahedron. First a textual explanation then images.
 
@@ -108,6 +108,7 @@ Here's how we identify individual faces within the rhombic triacontahedron. Firs
 - The first face within each ring is the one facing directly toward you (if there is one) or the one just to the right of center (if there isn't one facing toward you).
 
 In these images, the gray cylinder represents the shaft attaching the star to the rest of the sculpture. The colors of the faces are random, only to help see the division between faces, and not necessarily the same across these screenshots unfortunately.
+
 |Bottom view|Front view|Top view|
 |:----:|:----:|:----:|
 | ![Bottom view](../images/nozzle_mapping_bottom_view.png) | ![Front view](../images/nozzle_mapping_front_view.png) | ![Top view](../images/nozzle_mapping_top_view.png) |
