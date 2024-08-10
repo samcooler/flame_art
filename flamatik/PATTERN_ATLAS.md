@@ -4,7 +4,7 @@ This document intends to organize the patterns somewhat and provide some idea of
 
 This document is not guaranteed to be exhaustive documentation of the patterns, it just serves to help with a mental model of "types" of patterns, which should hopefully be somewhat self-explanatory from the patterns' names.
 
-## Basic test patterns
+## Basic patterns
 
 - `start` - turns on solenoids and apertures and leaves them on
 
