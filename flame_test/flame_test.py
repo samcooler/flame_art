@@ -151,7 +151,7 @@ class LightCurveState:
 
         self.controllers = args.controllers
         self.nozzles = args.nozzles
-        self.nozzle_calibration = args.nozzle_calibration
+        self.aperture_calibration = args.aperture_calibration
 
 # not quite sure if I need a shared namespace or a simple namespace will do.
 # if all the objects in the namespace are themselves shared, then a simple namespace should work.
@@ -238,7 +238,7 @@ class LightCurveTransmitter:
 
     def nozzle_apply_calibration(self, nozzle: int, val: float ) -> float:
 
-        correction = self.lc_state.nozzle_calibration[str(nozzle)]
+        correction = self.lc_state.aperture_calibration[str(nozzle)]
         start = correction[0]
         stop = correction[1]
         return ((stop-start) * val) + start
@@ -622,6 +622,7 @@ def pattern_multipattern(state: LightCurveState):
 
 PATTERN_PARAMETERS = [ "nozzle", "delay", "group" ]
 
+
 def execute_list(args, state: LightCurveState):
 
     # load config file
@@ -689,7 +690,7 @@ def args_init():
         conf = json.load(ftc_f)  # XXX catch exceptions here.
         args.controllers = conf['controllers']
         args.nozzles = conf['nozzles']
-        args.nozzle_calibration = conf['nozzle_calibration']
+        args.aperture_calibration = conf['aperture_calibration']
 
     return args
 

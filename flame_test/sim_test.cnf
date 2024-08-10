@@ -1,6 +1,6 @@
 {
     "nozzles": 30,
-    "nozzle_calibration": {
+    "aperture_calibration": {
         "0": [ 0.0, 255.0 ],
         "1": [ 0.0, 255.0 ],
         "2": [ 0.0, 255.0 ],

@@ -17,29 +17,6 @@ Install the necessary python packages. `pip install -r requirements.txt`
 
 On windows, you may need to required the C++ build tools in order to get the tools `netifaces` requires. This can be done through `choco install visualcpp-build-tools` or by installing Visual Studio Code, and installing the C++ package, and correctly adding to path.
 
-# Art Net Definition
-
-Each controller expresses 10 devices, which in ArtNet terms are Fixtures.
-
-Each controller is at a single IP address, therefore, there are 3.
-
-Each fixture has two channels.
-
-The first channel is "solonoid", which is 1 (on) or 0 (off).
-
-The second channel is "aperture", which controls the flow. This value is from 0 (off) to 255 (full on).
-
-Note that there are two ways to express "off". Thus is is possible to have the valve full open but the solonoid off, and the solonoid on but the valve is off. This is _intentional_ because we wish to support "poofs", that is, having the valve wide open and turning the solonoid open.
-
-Therefore, an artnet packet will generally have 20 channels - 2 bytes for each fixture, 10 fixtures, in order.
-
-The solonoids are in a particular order, which will be described in another document.
-
-Artnet packets are _directed_, because we are worried about these embedded systems not playing nice with broadcast IP packets.
-
-Q: The sequence number _is_ used. The ArtNet is flowing over wifi, which has a greater chance of inverting packet order.
-
-Q: ArtNet has a discover protocol. This doesn't use them.
 
 # Patterns
 
@@ -51,7 +28,7 @@ Change the name of the single function `def pattern_pulse` to the same name as t
 
 Change the pattern to so what you'd like. Use delays or time to update the array of `solinoid` and `aperture`.
 
-# Mapping and configuration
+# Mapping and configuration of nozzles
 
 The configuration file specifies what controller boards exist, how many nozzels they have, for outputting the right ArtNet.
 
@@ -61,9 +38,48 @@ where the nozzels go around in a circle and from the bottom to the top.
 In the config file, there is a mapping from the nozzels and solenoids as they
 are on the sculpture - which is randomly connected - to the abstract pattern version.
 
-For example, if controller "1" solenoid "1" actually maps to solenoid "8" in the
-abstract version, place the number "8" in the correct slot in the "solenoid_map"
+For example, if controller "1" solenoid wire "1" goes to nozzle "8" in the
+sculpture, place the number "8" in the correct slot in the `solenoid_map`
 position 1 in the config file.
+
+The wiring for solenoids and servos is different, even though a given physical solenoid and servo goes to the same nozzle.
+
+Therefore, there is also an `aperture_map` which is different.
+
+# Aperture ( servo ) calibration
+
+Pattern developers use 0.0 and 1.0 for each nozzel to represent how much they want the needle valve to be open.
+
+The values sent over ArtNet to the controller are 0 ... 255 . They are converted to PWM values for the servos. 
+
+There isn't a huge amount of resolution in the physical system, maybe about 100 steps.
+
+Each servo and needle valve head is slightly different. Therefore "full off" might be 0, or it might be 5, or it might be 10. It's
+pretty important to get these values right, to avoid jamming the servo and causing failure.
+
+This calibration is done in `flame_test` . There is a configuration table that maps the abstract range to the physical range.
+
+The table in the configuration file is called `aperture_calibration` . ** It has a tuple which is the start and stop range. ** These are represented
+as `float` (although more properly they might be `int`).
+
+The start value is the lowest value the program will emit over artnet for this nozzle. The end value is the highest value.
+
+## Example
+
+The physical nozzle on the sculpture is nozzel 7 . 
+
+The entry in the `aperture_calibration` table is: "7": [ 5.0, 100.0 ] 
+
+The controller's `aperture_map` shows that nozzel 7 is located on board 2, in the 4th position. This is found
+by reading through the controllers and finding where the value 7 is located.
+
+Therefore, the pattern developer puts a value like 0.5 for nozzel 7.
+
+`flame_test` normalizes 0.5 , which means half way between 5.0 and 100.0, to 52.5, and rounds down to 52.
+
+Then when the `flame_test` code is outputting values to board 2, it finds the 4th value in the output
+ArtNet fixture configuration is nozzle 7 , so it places the value 52 in the 8th byte (because solenoids and apertures are interleaved). 
+
 
 # The off state
 
