@@ -5,8 +5,6 @@
 import random
 import flame_test as ft
 from time import sleep
-from math import cos
-from math import tau
 import face_groupings as g
 
 equator = g.equators[0]
@@ -22,9 +20,13 @@ def pattern_random_stars_with_opposites(state: ft.LightCurveState) -> bool:
     state.fill_apertures(min_aperture)
 
     star_index = random.randint(0, len(g.stars) - 1)
+
+    # Open solenoids for selected star
     for nozzle in g.stars[star_index]:
         state.s.solenoids[nozzle] = 1
         state.s.solenoids[g.opposite[nozzle]] = 1
+
+    # Grow
     for progress in range(frames_per_period):
         prog = progress / frames_per_period
         for nozzle in g.stars[star_index]:
@@ -32,6 +34,8 @@ def pattern_random_stars_with_opposites(state: ft.LightCurveState) -> bool:
             state.s.apertures[nozzle] = ap
             state.s.apertures[g.opposite[nozzle]] = ap
         sleep(poof_period / frames_per_period)
+
+    # Shrink
     for progress in range(frames_per_period):
         prog = progress / frames_per_period
         for nozzle in g.stars[star_index]:
@@ -39,6 +43,8 @@ def pattern_random_stars_with_opposites(state: ft.LightCurveState) -> bool:
             state.s.apertures[nozzle] = ap
             state.s.apertures[g.opposite[nozzle]] = ap
         sleep(poof_period / frames_per_period)
+
+    # Close solenoids for selected star
     for nozzle in g.stars[star_index]:
         state.s.solenoids[nozzle] = 0
         state.s.solenoids[g.opposite[nozzle]] = 0
