@@ -69,6 +69,8 @@ This document is not guaranteed to be exhaustive documentation of the patterns, 
   - `test_halos`
   - `test_equators`
   - `test_stars`
+  - `equator_imu_single`
+  - `equator_imu_ortho`
 
 ## Misc/performance patterns
 
