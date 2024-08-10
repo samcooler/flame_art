@@ -20,7 +20,7 @@ aperture_mean = min_aperture + half_aperture_range
 def pattern_equator_wave(state: ft.LightCurveState) -> bool:
     # Start
     state.fill_solenoids(0)
-    state.fill_apertures(1.0)
+    state.fill_apertures(min_aperture)
     
     # Open all solenoids in the equator
     for nozzle in equator:
