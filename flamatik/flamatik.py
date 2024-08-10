@@ -49,17 +49,15 @@ from types import SimpleNamespace
 import asyncio
 import math
 
-#from osc4py3.as_eventloop import *
-#from osc4py3 import oscbuildparse
-#from osc4py3 import oscmethod as osm
-
-# let's use the AsyncIO call structure from osc_server
+# let's use the Blocking call structure from pythonosc 
 from pythonosc.dispatcher import Dispatcher
 from pythonosc.osc_server import BlockingOSCUDPServer
 
 from pythonosc import osc_server
 
+# netifaces helps us make sure we're talking the right network
 import netifaces
+# importlib is necessary for the strange plugin system
 import importlib
 
 import glob 
@@ -69,7 +67,6 @@ import sys
 from typing import List, Any
 
 import logging
-# logging.basicConfig(level=logging.DEBUG)
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
@@ -218,14 +215,14 @@ class LightCurveState:
 
 class LightCurveTransmitter:
 
-    def __init__(self, lc_state: LightCurveState) -> None:
+    def __init__(self, state: LightCurveState) -> None:
 
         print('initialize light curve transmitter')
 
-        self.lc_state = lc_state
+        self.state = state
         self.sequence = 0
         # override this if you want just the transmitter debugging
-        self.debug = lc_state.debug
+        self.debug = state.debug
 
         # create outbound socket
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # UDP
@@ -238,7 +235,7 @@ class LightCurveTransmitter:
 
     def nozzle_apply_calibration(self, nozzle: int, val: float ) -> float:
 
-        correction = self.lc_state.aperture_calibration[str(nozzle)]
+        correction = self.state.aperture_calibration[str(nozzle)]
         start = correction[0]
         stop = correction[1]
         return ((stop-start) * val) + start
@@ -254,10 +251,10 @@ class LightCurveTransmitter:
 
         print(f'transmit') if self.debug else None
 
-        for c in self.lc_state.controllers:
+        for c in self.state.controllers:
 
             # allocate the packet TODO allocate a packet once
-            packet = bytearray( ( self.lc_state.nozzles * 2) + ARTNET_HEADER_SIZE)
+            packet = bytearray( ( self.state.nozzles * 2) + ARTNET_HEADER_SIZE)
 
             # fill in the artnet part
             _artnet_packet(ARTNET_UNIVERSE, self.sequence, packet)
@@ -276,26 +273,26 @@ class LightCurveTransmitter:
 
                 # validation. Could make optional.
                 if (self.debug and 
-                        ( self.lc_state.s.solenoids[solenoid] < 0) or (self.lc_state.s.solenoids[solenoid] > 1)):
-                    print(f'active at {i+offset} out of range {self.lc_state.s.solenoids[solenoid]} skipping')
+                        ( self.state.s.solenoids[solenoid] < 0) or (self.state.s.solenoids[solenoid] > 1)):
+                    print(f'active at {i+offset} out of range {self.state.s.solenoids[solenoid]} skipping')
                     return
                 if (self.debug and 
-                        (self.lc_state.s.apertures[aperture] < 0.0) or (self.lc_state.s.apertures[aperture] > 1.0)):
-                    print(f'flow at {i+offset} out of range {self.lc_state.s.apertures[aperture]} skipping')
+                        (self.state.s.apertures[aperture] < 0.0) or (self.state.s.apertures[aperture] > 1.0)):
+                    print(f'flow at {i+offset} out of range {self.state.s.apertures[aperture]} skipping')
 
 # FILTER
 # In the case where the solenoid and aperture are mapped to the same physical device,
 # it is useful to turn off the solenoid when the aperture value is small. However, before mapping,
 # it doesn't work, because the apertures and nozzles are not the same physical device.
 
-#                if self.lc_state.s.apertures[i+offset] < 0.10:
+#                if self.state.s.apertures[i+offset] < 0.10:
 #                    print(f'force to 0 solenoid {i+offset}')
 #                    packet[ARTNET_HEADER_SIZE + (i*2) ] = 0
 #                else:
 
-                packet[ARTNET_HEADER_SIZE + (i*2) ] = self.lc_state.s.solenoids[solenoid]
+                packet[ARTNET_HEADER_SIZE + (i*2) ] = self.state.s.solenoids[solenoid]
 
-                packet[ARTNET_HEADER_SIZE + (i*2) + 1] = math.floor(self.nozzle_apply_calibration( aperture, self.lc_state.s.apertures[aperture] ) )
+                packet[ARTNET_HEADER_SIZE + (i*2) + 1] = math.floor(self.nozzle_apply_calibration( aperture, self.state.s.apertures[aperture] ) )
 
             # transmit
             if self.debug:
@@ -309,14 +306,14 @@ class LightCurveTransmitter:
 
 # background 
 
-# see comment about lc_state, it is a cross process shared object.
+# see comment about state, it is a cross process shared object.
 # this function is a separate process
 
-def transmitter_server(lc_state: LightCurveState, terminate: Event):
+def transmitter_server(state: LightCurveState, terminate: Event):
 
-    xmit = LightCurveTransmitter(lc_state)
+    xmit = LightCurveTransmitter(state)
 
-    delay = 1.0 / lc_state.args.fps
+    delay = 1.0 / state.args.fps
     # print(f'delay is {delay} fps is {xmit.fps}')
     try:
         while not terminate.is_set():
@@ -332,17 +329,17 @@ def transmitter_server(lc_state: LightCurveState, terminate: Event):
         pass
 
     print(f'transmit server: turning off gas')
-    lc_state.fill_apertures(0.0)
-    lc_state.fill_solenoids(0)
+    state.fill_apertures(0.0)
+    state.fill_solenoids(0)
     xmit.transmit()
     sleep(0.1)
 
-def transmitter_server_init(lc_state: LightCurveState):
+def transmitter_server_init(state: LightCurveState):
     global TRANSMITTER_PROCESS, XMIT_TERMINATE_EVENT
 
     print('transmitter server init')
     XMIT_TERMINATE_EVENT = Event()
-    TRANSMITTER_PROCESS = Process(target=transmitter_server, args=(lc_state, XMIT_TERMINATE_EVENT) )
+    TRANSMITTER_PROCESS = Process(target=transmitter_server, args=(state, XMIT_TERMINATE_EVENT) )
     TRANSMITTER_PROCESS.start()
 
 def transmitter_server_shutdown():
@@ -384,68 +381,68 @@ def get_interface_addresses():
 
 # generic handler good for debugging
 def osc_handler_all (address: str, fixed_args: List[Any], *vals):
-    lc_state = fixed_args[0]
+    state = fixed_args[0]
     print(f' osc handler ALL received address {address} len {len(address)}; positional arguments: {vals}')
 
 # specific handlers good for efficiency
 def osc_handler_gyro(address: str, fixed_args: List[Any], *vals):
-    print(f' osc: gyro {vals}') if lc_state.debug else None
-    lc_state = fixed_args[0]
+    print(f' osc: gyro {vals}') if state.debug else None
+    state = fixed_args[0]
     if len(vals) != 3:
         return
-    lc_state.s.gyro[:] = vals
+    state.s.gyro[:] = vals
  
 def osc_handler_rotation(address: str, fixed_args: List[Any], *vals):
-    print(f' osc: rotation {vals}') if lc_state.debug else None
-    lc_state = fixed_args[0]
+    print(f' osc: rotation {vals}') if state.debug else None
+    state = fixed_args[0]
     if len(vals) != 3:
         return
-    lc_state.s.rotation[:] = vals
+    state.s.rotation[:] = vals
 
 def osc_handler_gravity(address: str, fixed_args: List[Any], *vals):
-    print(f' osc: gravity {vals}') if lc_state.debug else None
-    lc_state = fixed_args[0]
+    print(f' osc: gravity {vals}') if state.debug else None
+    state = fixed_args[0]
     if len(vals) != 3:
         return
-    lc_state.s.gravity[:] = vals
+    state.s.gravity[:] = vals
 
 # imu order
 # miliseconds int
 # rotation, gravity, gyro
 
 def osc_handler_imu(address: str, fixed_args: List[Any], *vals):
-    # print(f'handler received IMU: time {vals[0]} rot {vals[1:4]}, grav {vals[4:7]}, gyro {vals[7:10]} ') if lc_state.debug else None
+    # print(f'handler received IMU: time {vals[0]} rot {vals[1:4]}, grav {vals[4:7]}, gyro {vals[7:10]} ') if state.debug else None
     if len(vals) != 10:
         print(f'IMU: wrong number parameters should be 10 is: {len(vals) }')
         return
-    lc_state = fixed_args[0]
-    lc_state.s.rotation[:] = vals[1:4]
-    lc_state.s.gravity[:] = vals[4:7]
-    lc_state.s.gyro[:] = vals[7:10]
-    print(f'OSC IMU: rot {vals[1]:.4f}, {vals[2]:.4f}, {vals[3]:.4f}, grav {vals[4]:.4f}, {vals[5]:.4f}, {vals[6]:.4f} gyro {vals[7]:.4f}, {vals[8]:.4f}, {vals[9]:.4f}  ') if lc_state.debug else None
+    state = fixed_args[0]
+    state.s.rotation[:] = vals[1:4]
+    state.s.gravity[:] = vals[4:7]
+    state.s.gyro[:] = vals[7:10]
+    print(f'OSC IMU: rot {vals[1]:.4f}, {vals[2]:.4f}, {vals[3]:.4f}, grav {vals[4]:.4f}, {vals[5]:.4f}, {vals[6]:.4f} gyro {vals[7]:.4f}, {vals[8]:.4f}, {vals[9]:.4f}  ') if state.debug else None
     print(f'OSC IMU: rot {vals[1]:.4f}, {vals[2]:.4f}, {vals[3]:.4f}, grav {vals[4]:.4f}, {vals[5]:.4f}, {vals[6]:.4f} gyro {vals[7]:.4f}, {vals[8]:.4f}, {vals[9]:.4f}  ') 
 
 
 def osc_handler_nozzles(address: str, fixed_args: List[Any], *vals):
-    print(f' osc: nozzles {vals}') if lc_state.debug else None
-    lc_state = fixed_args[0]
-    if len(vals) != len(lc_state.s.nozzle_buttons):
-        print(f'Nozzle Buttons: expected {len(lc_state.s.nozzle_buttons)} found len {len(vals)} ignoring')
+    print(f' osc: nozzles {vals}') if state.debug else None
+    state = fixed_args[0]
+    if len(vals) != len(state.s.nozzle_buttons):
+        print(f'Nozzle Buttons: expected {len(state.s.nozzle_buttons)} found len {len(vals)} ignoring')
         return
-    lc_state.s.nozzle_buttons[:] = vals
+    state.s.nozzle_buttons[:] = vals
 
 def osc_handler_controls(address: str, fixed_args: List[Any], *vals):
-    print(f' osc: controls {vals}') if lc_state.debug else None
-    lc_state = fixed_args[0]
-    if len(vals) != len(lc_state.s.control_buttons):
-        print(f'Control buttons: expected {len(lc_state.s.control_buttons)} found {len(vals)} ignoring')
+    print(f' osc: controls {vals}') if state.debug else None
+    state = fixed_args[0]
+    if len(vals) != len(state.s.control_buttons):
+        print(f'Control buttons: expected {len(state.s.control_buttons)} found {len(vals)} ignoring')
         return
-    lc_state.s.control_buttons[:] = valss
+    state.s.control_buttons[:] = valss
 
 
 #this has never worked
 def osc_handler_bundle(address: str, fixed_args: List[Any], *vals):
-    lc_state = fixed_args[0]
+    state = fixed_args[0]
     print(f' osc bundle handler received address {address}')
     print(f' osc handler bundle: args {vals}')
 
@@ -461,27 +458,27 @@ def osc_handler_bundle(address: str, fixed_args: List[Any], *vals):
 #        print(f' registered bundle handler')
 
 # this is a new process, and uses a blocking OSC library.
-# it takes anything it receives and places it in the shared lc_state object
+# it takes anything it receives and places it in the shared state object
 # for other processes to read
 
-def osc_server(lc_state: LightCurveState, address: str):
+def osc_server(state: LightCurveState, address: str):
 
     dispatcher = Dispatcher()
 
     # setting up a catch-all can be good for debugging
-    # dispatcher.map('*', osc_handler_all, lc_state)
+    # dispatcher.map('*', osc_handler_all, state)
 
     # setting individual methods for each, slightly more efficient - but won't get timestamp bundles -
     # so disabling if we're using bundles
-    dispatcher.map('/LC/gyro', osc_handler_gyro, lc_state)
-    dispatcher.map('/LC/rotation', osc_handler_rotation, lc_state)
-    dispatcher.map('/LC/gravity', osc_handler_gravity, lc_state)
+    dispatcher.map('/LC/gyro', osc_handler_gyro, state)
+    dispatcher.map('/LC/rotation', osc_handler_rotation, state)
+    dispatcher.map('/LC/gravity', osc_handler_gravity, state)
 
-    dispatcher.map('/LC/imu', osc_handler_imu, lc_state)
+    dispatcher.map('/LC/imu', osc_handler_imu, state)
 
-    dispatcher.map('/LC/nozzles', osc_handler_nozzles, lc_state)
-    dispatcher.map('/LC/controls', osc_handler_controls, lc_state)
-    dispatcher.set_default_handler(osc_handler_all, lc_state)
+    dispatcher.map('/LC/nozzles', osc_handler_nozzles, state)
+    dispatcher.map('/LC/controls', osc_handler_controls, state)
+    dispatcher.set_default_handler(osc_handler_all, state)
 
     server = BlockingOSCUDPServer((address, OSC_PORT), dispatcher)
 
@@ -491,7 +488,7 @@ def osc_server(lc_state: LightCurveState, address: str):
     except KeyboardInterrupt: # swallow silently
         pass
 
-def osc_server_init(lc_state: LightCurveState, args):
+def osc_server_init(state: LightCurveState, args):
     global OSC_PROCESS
 
     # decide the address to listen on
@@ -511,7 +508,7 @@ def osc_server_init(lc_state: LightCurveState, args):
     print(f'OSC listening for broadcasts on {args.address}')
 
 
-    OSC_PROCESS = Process(target=osc_server, args=(lc_state, args.address) )
+    OSC_PROCESS = Process(target=osc_server, args=(state, args.address) )
     OSC_PROCESS.daemon = True
     OSC_PROCESS.start()
 
@@ -580,10 +577,10 @@ def import_patterns():
 def patterns():
     return ' '.join(PATTERN_FUNCTIONS.keys())
 
-def pattern_execute(pattern: str, lc_state) -> bool:
+def pattern_execute(pattern: str, state) -> bool:
 
     if pattern in PATTERN_FUNCTIONS:
-        return PATTERN_FUNCTIONS[pattern](lc_state)
+        return PATTERN_FUNCTIONS[pattern](state)
     else:
         return False
 
@@ -711,29 +708,29 @@ def main():
     with Manager() as manager:
 
         try:
-            lc_state = LightCurveState(args, manager)
+            state = LightCurveState(args, manager)
         except Exception as e:
             print(f' Config file problem, exiting: {str(e)} ')
             return
 
         # creates a transmitter background process that reads from the shared state
-        transmitter_server_init(lc_state)
+        transmitter_server_init(state)
 
         # creates a osc server receiver process which fills the shared state
-        osc_server_init(lc_state, args)
+        osc_server_init(state, args)
 
 
         try:
 
             # if there's a playlist (list) play it, otherwise, play the pattern
             if (args.list != ""):
-                execute_list(args, lc_state)
+                execute_list(args, state)
 
             else:
 
                 # run it bro
                     for _ in range(args.repeat):
-                        pattern_execute(args.pattern, lc_state)
+                        pattern_execute(args.pattern, state)
 
         except KeyboardInterrupt: # be silent in this case
             pass
@@ -742,7 +739,6 @@ def main():
             print(f' in all cases, try to shutdown the transmitter safely')
             transmitter_server_shutdown()
             sleep(0.5)
-
 
 
 # only effects when we're being run as a module but whatever
