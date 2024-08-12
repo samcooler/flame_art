@@ -272,7 +272,7 @@ class LightCurveTransmitter:
                 # print(f'c: {c['name']} packet aperture {i} model aperture {aperture}')
 
                 # validation. Could make optional.
-                self.state.s.solenoids = [False if s is None else s for s in self.state.s.solenoids]
+                self.state.s.solenoids = [0 if s is None else s for s in self.state.s.solenoids]
                 # if (self.debug and
                 #         ( self.state.s.solenoids[solenoid] < 0) or (self.state.s.solenoids[solenoid] > 1)):
                 #     print(f'active at {i+offset} out of range {self.state.s.solenoids[solenoid]} skipping')
