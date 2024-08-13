@@ -27,7 +27,7 @@ def pattern_appoof(state: ft.LightCurveState) -> bool:
         return(False)
 
     print(f' Turn on valves off solenoids')
-    state.fill_solenoids(0)
+    state.fill_solenoids(1)
     state.fill_apertures(1.0)
     sleep(0.5)
 
