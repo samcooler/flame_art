@@ -1,3 +1,4 @@
 importlib
 python-osc
 netifaces
+numpy
