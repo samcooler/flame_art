@@ -266,11 +266,20 @@ fn receive_osc(socket: &UdpSocket, gravity: &mut Vector3<f32>) {
     };
     match osc_packet {
         OscPacket::Message(msg) => match (msg.addr.as_str(), msg.args.as_slice()) {
+            (
+                "/LC/imu",
+                [_, _, _, _, OscType::Float(x), OscType::Float(y), OscType::Float(z), ..],
+            ) => {
+                println!("Received imu message; gravity: ({}, {}, {})", x, y, z);
+                gravity.x = -*x;
+                gravity.y = -*z;
+                gravity.z = -*y;
+            }
             ("/LC/gravity", [OscType::Float(x), OscType::Float(y), OscType::Float(z)]) => {
                 println!("Gravity: ({}, {}, {})", x, y, z);
-                gravity.x = *y;
-                gravity.y = *x;
-                gravity.z = -*z;
+                gravity.x = -*x;
+                gravity.y = -*z;
+                gravity.z = -*y;
             }
             ("/LC/rotation", _) => {
                 println!("Rotation");
