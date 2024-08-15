@@ -417,7 +417,9 @@ def osc_handler_imu(address: str, fixed_args: List[Any], *vals):
         return
     state = fixed_args[0]
     state.s.rotation[:] = vals[1:4]
-    state.s.gravity[:] = vals[4:7]
+    # Need to shuffle the gravity vector around based on the way it's oriented on the sculpture
+    g = vals[4:7]
+    state.s.gravity[:] = [g[0], -g[1], -g[2]]
     state.s.gyro[:] = vals[7:10]
     print(f'OSC IMU: rot {vals[1]:.4f}, {vals[2]:.4f}, {vals[3]:.4f}, grav {vals[4]:.4f}, {vals[5]:.4f}, {vals[6]:.4f} gyro {vals[7]:.4f}, {vals[8]:.4f}, {vals[9]:.4f}  ') if state.debug else None
     print(f'OSC IMU: rot {vals[1]:.4f}, {vals[2]:.4f}, {vals[3]:.4f}, grav {vals[4]:.4f}, {vals[5]:.4f}, {vals[6]:.4f} gyro {vals[7]:.4f}, {vals[8]:.4f}, {vals[9]:.4f}  ') 
