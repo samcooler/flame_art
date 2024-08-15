@@ -265,6 +265,10 @@ class LightCurveTransmitter:
 
         print(f'transmit') if self.debug else None
 
+        use_buttons = True
+        if self.state.args.nobuttons is not None:
+            use_buttons = False
+
         for c in self.state.controllers:
 
             # allocate the packet TODO allocate a packet once
@@ -306,7 +310,15 @@ class LightCurveTransmitter:
 #                    packet[ARTNET_HEADER_SIZE + (i*2) ] = 0
 #                else:
 
-                packet[ARTNET_HEADER_SIZE + (i*2) ] = self.state.s.solenoids[solenoid]
+                # compose in the buttons if enabled
+
+                if use_buttons and (self.state.s.nozzle_buttons[solenoid]):
+                    print(f' firing logical {i} physical {solenoid} because button')
+                    s = True
+                else:
+                    s = self.state.s.solenoids[solenoid]
+
+                packet[ARTNET_HEADER_SIZE + (i*2) ] = s
 
                 packet[ARTNET_HEADER_SIZE + (i*2) + 1] = math.floor(self.nozzle_apply_calibration( aperture, self.state.s.apertures[aperture] ) )
 
@@ -442,20 +454,20 @@ def osc_handler_imu(address: str, fixed_args: List[Any], *vals):
 
 
 def osc_handler_nozzles(address: str, fixed_args: List[Any], *vals):
-    print(f' osc: nozzles {vals}') if state.debug else None
     state = fixed_args[0]
+    print(f' osc: nozzles {vals}') if state.debug else None
     if len(vals) != len(state.s.nozzle_buttons):
         print(f'Nozzle Buttons: expected {len(state.s.nozzle_buttons)} found len {len(vals)} ignoring')
         return
     state.s.nozzle_buttons[:] = vals
 
 def osc_handler_controls(address: str, fixed_args: List[Any], *vals):
-    print(f' osc: controls {vals}') if state.debug else None
     state = fixed_args[0]
+    print(f' osc: controls {vals}') if state.debug else None
     if len(vals) != len(state.s.control_buttons):
         print(f'Control buttons: expected {len(state.s.control_buttons)} found {len(vals)} ignoring')
         return
-    state.s.control_buttons[:] = valss
+    state.s.control_buttons[:] = vals
 
 
 #this has never worked
@@ -690,6 +702,7 @@ def args_init():
     parser.add_argument('--address', '-a', default="0.0.0.0", type=str, help=f'address to listen OSC on defaults to broadcast on non-loop')
     parser.add_argument('--fps', '-f', default=15, type=int, help='frames per second')
     parser.add_argument('--repeat', '-r', default=9999, type=int, help="number of times to run pattern")
+    parser.add_argument('--nobuttons',  action='store_true', help="add this if you want to disable the button function")
 
     parser.add_argument('--list', '-l', default="", type=str, help="List: file of patterns to play (overrides pattern)")
 
