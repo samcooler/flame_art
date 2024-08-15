@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/enval python3
 
 
 # Generally coded with python 3.12, but also works with Python 3.10,
@@ -206,6 +206,20 @@ class LightCurveState:
     def fill_solenoids(self, val: int):
         self.s.solenoids[:] = [val] * self.nozzles
 
+    def set_solenoid(self, nozzle, val: int):
+        # set one or more solenoids. None sets all
+        if nozzle is not None:
+            self.s.solenoids[nozzle] = val
+        else:
+            self.fill_solenoids(val)
+
+    def set_aperture(self, nozzle, val: float):
+        # set one or more apertures. None sets all
+        if nozzle is not None:
+            self.s.apertures[nozzle] = val
+        else:
+            self.fill_apertures(val)
+
     def print_aperture(self):
         print(self.s.apertures)
 
@@ -272,13 +286,15 @@ class LightCurveTransmitter:
                 # print(f'c: {c['name']} packet aperture {i} model aperture {aperture}')
 
                 # validation. Could make optional.
-                if (self.debug and 
-                        ( self.state.s.solenoids[solenoid] < 0) or (self.state.s.solenoids[solenoid] > 1)):
-                    print(f'active at {i+offset} out of range {self.state.s.solenoids[solenoid]} skipping')
-                    return
-                if (self.debug and 
-                        (self.state.s.apertures[aperture] < 0.0) or (self.state.s.apertures[aperture] > 1.0)):
-                    print(f'flow at {i+offset} out of range {self.state.s.apertures[aperture]} skipping')
+                # self.state.s.solenoids = [0 if s is None else s for s in self.state.s.solenoids]
+                # self.state.s.apertures = [0 if a is None else a for a in self.state.s.apertures]
+                # if (self.debug and
+                #         ( self.state.s.solenoids[solenoid] < 0) or (self.state.s.solenoids[solenoid] > 1)):
+                #     print(f'active at {i+offset} out of range {self.state.s.solenoids[solenoid]} skipping')
+                #     return
+                # if (self.debug and
+                #         (self.state.s.apertures[aperture] < 0.0) or (self.state.s.apertures[aperture] > 1.0)):
+                #     print(f'flow at {i+offset} out of range {self.state.s.apertures[aperture]} skipping')
 
 # FILTER
 # In the case where the solenoid and aperture are mapped to the same physical device,
