@@ -31,13 +31,18 @@ Install Adafruit's Feather board in your Arduino IDE.
 Follow these instructions: [https://learn.adafruit.com/adafruit-esp32-s3-feather/arduino-ide-setup](https://learn.adafruit.com/adafruit-esp32-s3-feather/arduino-ide-setup), but I had to use "Python3" instead of "python" and "pip3" instead of "pip"
 I tried installing the board without following those instructions and had problems.
 
+Brian says: I had no issues with python. I just switched to the board `Adafruit ESP32 Feather S3 2MB PSRAM`, which was already loaded, and it compiled fine. This is on most recent Arudino 2.3.2 as of writing.
+
 
 ## libraries
 
 
 #include <Adafruit_MCP23X17.h>, library in Arduino IDE. You can find it by searching for "Adafruit MCP23017 Arduino Library" in library manager.
+
 #include <WiFi.h>, I didn't have to install any libraries. I believe this was installed with the board. It doesn't work when using many other boards.
+
 #include <WiFiUdp.h>, I didn't have to install any libraries. I believe this was installed with the board. It doesn't work when using many other boards.
+
 #include <OSCMessage.h>, From "OSC" library in Arduino IDE. You can find it by searching for "Open Sound Control" in library manager.
 
 # Seeing output
