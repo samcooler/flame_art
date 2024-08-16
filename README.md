@@ -27,6 +27,33 @@ This runs a basic pattern (pulse). Please see the help ( python flame_test.py --
 and the readme in that directory for information about the different patterns
 available, and how to build and run a playlist.
 
+# Windows firewall and network
+
+Our use of networking in this system is mostly broadcast IP. Broadcast IP is configured based on the netmask, ie, for a 255.255.255.0 network, the broadcast address will be the network address but with 0xff in the last octet. This tends to allow "zero config", which is the only configuration required is to set the IP address of the controller, and enjoy.
+
+In windows, however, you may get the problem where any of these programs don't receive from the controllers. ( This may happen on Mac too, but I don't have one to test with).
+
+This can especially happen if you reinstall python, or run Python from a VENV which hasn't been previously allowed.
+
+Similarly, Windows networks are considered `public` or `private` . If you are using ethernet to a new network (I would consider a production art network private), you may have incorrectly categorized that network, leading to a surprising result.
+
+A dialog ** should ** come up on the screen regarding whether you wish to allow the program access, but sometimes it doesn't, or sometimes it is hidden.
+
+To debug this problem:
+
+- Use Wireshark to make sure the packets are actually arriving at the laptop with the expected broadcast IP address. If there are no packets flowing, then the problem is in the source.
+
+- Turn on the debug component of the OSC listener in Flamatik. This can be done with the very verbose `--debug` on the command line, or finding the OSC object and turning on its debug system.
+
+- Disable the entire windows firewall for incoming and outgoing packets.
+
+- If you wish to be clever and create a rule, you'll have to use the firewall rules system. Interestingly, there are two programs in Windows 11, one called `Windows Defender Firewall` and one called `Windows Defender Firewall with Advanced Security` . The standard windows defender firewall program is a little simpler and does what you need - and its advanced settings are the `Advanced Security` app.
+
+In that panel, you should see the networks you are connected to, whether they are considered public or private. Generally, the ability to change between public and private is in the `properties` box. However, it seems for "unidentified" networks (which probably an ethernet network with static address will be), it is not possible to change to private. Therefore, it is probably best to turn off windows defender firewall in
+its entirety, instead of having all python programs be able to access the network.
+
+By going through the settings, you may find `python` , make sure it is the right python (because venv), and set inbound and outbound rules for UDP. My laptop now has 4 rules for my main python (UDP and TCP for public and private) and works fine.
+
 # Configurations and passwords
 
 ## Access Point
