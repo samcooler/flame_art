@@ -31,6 +31,9 @@ import netifaces
 import os
 import sys
 
+LAUNCHPAD_STR1 = 'Launchpad Mini'
+LAUNCHPAD_STR2 = 'Novation USB'
+
 
 class LaunchpadMiniMk2():
 
@@ -49,14 +52,20 @@ class LaunchpadMiniMk2():
         self.pad_handler = pad_handler
 
         for i, port in enumerate(self.midi_in.get_ports()):
-            if 'Launchpad Mini' in port:
+            if LAUNCHPAD_STR1 in port:
+                self.launchpad_in_port = i
+                break
+            elif LAUNCHPAD_STR2 in port:
                 self.launchpad_in_port = i
                 break
             else:
                 print(f'launchpad in is not {port} ')
 
         for i, port in enumerate(self.midi_out.get_ports()):
-            if 'Launchpad Mini' in port:
+            if LAUNCHPAD_STR1 in port:
+                self.launchpad_out_port = i
+                break
+            elif LAUNCHPAD_STR2 in port:
                 self.launchpad_out_port = i
                 break
             else:
