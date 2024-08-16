@@ -703,6 +703,7 @@ def args_init():
     parser.add_argument('--fps', '-f', default=15, type=int, help='frames per second')
     parser.add_argument('--repeat', '-r', default=9999, type=int, help="number of times to run pattern")
     parser.add_argument('--nobuttons',  action='store_true', help="add this if you want to disable the button function")
+    parser.add_argument('--debug', action='store_true', help=" turn on the very verbose debugging all the things")
 
     parser.add_argument('--list', '-l', default="", type=str, help="List: file of patterns to play (overrides pattern)")
 
@@ -731,6 +732,8 @@ def main():
     pattern_insert('multipattern', pattern_multipattern)
 
     args = args_init()
+    global debug
+    debug = args.debug
 
     if (args.list != "") and (args.pattern not in PATTERN_FUNCTIONS):
         print(f' pattern must be one of {patterns()}')
