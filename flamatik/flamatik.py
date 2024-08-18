@@ -311,7 +311,7 @@ class LightCurveTransmitter:
                 # compose in the buttons if enabled
 
                 if use_buttons and (self.state.s.nozzle_buttons[solenoid]):
-                    print(f' firing logical {i} physical {solenoid} because button')
+                    # print(f' firing logical {i} physical {solenoid} because button')
                     s = True
                 else:
                     s = self.state.s.solenoids[solenoid]
