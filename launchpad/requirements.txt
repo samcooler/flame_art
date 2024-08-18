@@ -1,3 +1,2 @@
-pygame
 python-rtmidi
 osc4py3
