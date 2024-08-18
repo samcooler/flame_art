@@ -265,9 +265,7 @@ class LightCurveTransmitter:
 
         print(f'transmit') if self.debug else None
 
-        use_buttons = True
-        if self.state.args.nobuttons is not None:
-            use_buttons = False
+        use_buttons = not self.state.args.nobuttons
 
         for c in self.state.controllers:
 
@@ -449,16 +447,19 @@ def osc_handler_imu(address: str, fixed_args: List[Any], *vals):
     g = vals[4:7]
     state.s.gravity[:] = [g[0], -g[1], -g[2]]
     state.s.gyro[:] = vals[7:10]
-    print(f'OSC IMU: rot {vals[1]:.4f}, {vals[2]:.4f}, {vals[3]:.4f}, grav {vals[4]:.4f}, {vals[5]:.4f}, {vals[6]:.4f} gyro {vals[7]:.4f}, {vals[8]:.4f}, {vals[9]:.4f}  ') if state.debug else None
-    print(f'OSC IMU: rot {vals[1]:.4f}, {vals[2]:.4f}, {vals[3]:.4f}, grav {vals[4]:.4f}, {vals[5]:.4f}, {vals[6]:.4f} gyro {vals[7]:.4f}, {vals[8]:.4f}, {vals[9]:.4f}  ') 
+    #print(f'OSC IMU: rot {vals[1]:.4f}, {vals[2]:.4f}, {vals[3]:.4f}, grav {vals[4]:.4f}, {vals[5]:.4f}, {vals[6]:.4f} gyro {vals[7]:.4f}, {vals[8]:.4f}, {vals[9]:.4f}  ') if state.debug else None
+    #print(f'OSC IMU: rot {vals[1]:.4f}, {vals[2]:.4f}, {vals[3]:.4f}, grav {vals[4]:.4f}, {vals[5]:.4f}, {vals[6]:.4f} gyro {vals[7]:.4f}, {vals[8]:.4f}, {vals[9]:.4f}  ') 
 
 
 def osc_handler_nozzles(address: str, fixed_args: List[Any], *vals):
     state = fixed_args[0]
-    print(f' osc: nozzles {vals}') if state.debug else None
+    print(f' osc: nozzles {vals}') if state.debug else None 
     if len(vals) != len(state.s.nozzle_buttons):
         print(f'Nozzle Buttons: expected {len(state.s.nozzle_buttons)} found len {len(vals)} ignoring')
         return
+#    for idx, v in enumerate(vals):
+#        if v:
+#            print(f' nozzle buttons: index {idx} is true ')
     state.s.nozzle_buttons[:] = vals
 
 def osc_handler_controls(address: str, fixed_args: List[Any], *vals):
