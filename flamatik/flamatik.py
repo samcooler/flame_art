@@ -1,4 +1,4 @@
-#!/usr/bin/enval python3
+#!/usr/bin/env python
 
 
 # Generally coded with python 3.12, but also works with Python 3.10,
