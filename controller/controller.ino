@@ -14,7 +14,6 @@ const char *ssid = "lightcurve";
 const char *password = "curvelight";
 ArtnetWifi artnet;
 
-
 // SERVOS
 const int NUM_VALVES = 12;
 float valveStates[NUM_VALVES]; // Stores valve states (0.0 to 1.0)
@@ -25,7 +24,6 @@ const int calRange = 1000; // msec also, low to high
 
 const int INTERVAL_MAX = 1400;
 const int INTERVAL_MIN = 300;
-
 
 // SOLENOIDS
 
@@ -48,7 +46,6 @@ struct ValveData
 
 ValveData valveData[NUM_VALVES];
 
-
 //
 // States of Controller
 //
@@ -57,14 +54,12 @@ ValveData valveData[NUM_VALVES];
 // If it receives a network packet, it stops using 'artMode' to update valves and solenoids.
 // 
 
-
 // Either it is running "artMode", where it is 
 // or it is listening for network t
 bool artModeActive = false;
 // if switch1, forceArtMode, but switch2 unforces it
 bool forceArtMode = false;
 bool preventArtMode = false;
-
 
 bool artnetActive = false;
 
@@ -98,8 +93,11 @@ void controlValve(int valveNum, int servoValue)
 
 void setValveState(int valveNum, float state, bool print = 0)
 {
-  if (state > 1.0) {
-    Serial.print(" valve set too high "); Serial.println(state); state = 1.0;
+  if (state > 1.0)
+  {
+    Serial.print(" valve set too high ");
+    Serial.println(state);
+    state = 1.0;
   }
   valveStates[valveNum] = state;
   int servoValue = valueToMsec(valveNum, state);
@@ -113,14 +111,14 @@ void setValveState(int valveNum, float state, bool print = 0)
   }
 }
 
-
 unsigned long millisLastDisplayValves = 0; // Add this global variable at the top of your code
 
 #define DISPLAY_VALVE_DELAY 1000
 
 void displayValves(unsigned long currentTime, bool force = 0)
 {
-  if (currentTime < millisLastDisplayValves + DISPLAY_VALVE_DELAY) {
+  if (currentTime < millisLastDisplayValves + DISPLAY_VALVE_DELAY)
+  {
     return;
   }
   millisLastDisplayValves = currentTime;
@@ -155,7 +153,6 @@ void displayValves(unsigned long currentTime, bool force = 0)
   }
   // drawDisplay();
 }
-
 
 //
 // set solenoid
@@ -193,7 +190,8 @@ bool isWifiConnected()
 void printWifiStatus()
 {
 
-  if (isWifiConnected()) {
+  if (isWifiConnected())
+  {
 
     Serial.println("Wifi Connected ");
     Serial.print("SSID: ");
@@ -208,7 +206,8 @@ void printWifiStatus()
     Serial.print(rssi);
     Serial.println(" dBm");
   }
-  else {
+  else
+  {
     Serial.print("Wifi NOT Connected: ");
     Serial.println("Status: ");
     switch (WiFi.status())
@@ -240,7 +239,6 @@ void printWifiStatus()
     }
   }
 }
-
 
 //
 // ArtNet
@@ -294,7 +292,8 @@ int switch1 = -1;
 int switch2 = -1;
 int switch3 = -1; 
 
-void readSwitches() {
+void readSwitches()
+{
 
 // this doesn't seem to work?
 //  switch1 = pca9539.digitalRead(12);
@@ -358,13 +357,12 @@ void setup()
   for (int i = 0; i < NUM_VALVES; i++)
   {
     valveStates[i] = 0.0;
-    calMin[i] = calMinAll;  // Default values
+    calMin[i] = calMinAll;            // Default values
     calMax[i] = calMin[i] - calRange; // Default values
 
     // enable and turn off solenoid outputs
     setSolenoidState(i, 0); // Initially off
   }
-
 
   // Start trying to connect to wifi
   beginWifi();
@@ -393,7 +391,6 @@ void setup()
     setValveState(i, 0.5);
   }
   delay(1000); // Wait for 2 second
-
 }
 
 //
@@ -411,17 +408,20 @@ void loop()
 
   // Switch1: safe valves and enter artmode immediately
   readSwitches();
-  if (switch1 && (!forceArtMode)) {
+  if (switch1 && (!forceArtMode))
+  {
     Serial.println(" switch 1 detected: forcing ArtMode");
     forceArtMode = true;
     preventArtMode = false;
   }
-  if (switch2 && (!preventArtMode)) {
+  if (switch2 && (!preventArtMode))
+  {
     Serial.println(" switch 2 detected: prevent artmode");
     forceArtMode = false;
     preventArtMode = true;
   }
-  if (switch3 && (forceArtMode || preventArtMode)) {
+  if (switch3 && (forceArtMode || preventArtMode))
+  {
     Serial.println(" switch 3 detected: normal mode ");
     forceArtMode = false;
     preventArtMode = false;
@@ -431,7 +431,8 @@ void loop()
   if ((!preventArtMode) && 
       (forceArtMode || (currentTime > millisLastArtnet + ARTNET_PACKET_DELAY)))
   {
-    if (artModeActive == false) {
+    if (artModeActive == false)
+    {
       initArtMode();
     }
     updateArtMode(currentTime);
@@ -442,7 +443,8 @@ void loop()
   {
 
     // if we're not connected but we had an artnet listener, stop it
-    if (artnetActive == true) {
+    if (artnetActive == true)
+    {
       endArtnet();
     }
 
@@ -456,16 +458,15 @@ void loop()
   }
   else // wifiIsConnected
   {
-    if (artnetActive == false) {
+    if (artnetActive == false)
+    {
       beginArtnet();
     }
     receiveArtnet();
   }
 
   delay(2); // Delay(1) supposedly important for ArtNet, it's also not good to overdrive
-
 }
-
 
 //
 // Art Mode

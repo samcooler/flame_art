@@ -245,7 +245,7 @@ void setup()
   {
     solenoidDutyCycle[i] = solenoidDutyCycleInit;
     valveStates[i] = 0.0;
-    calMin[i] = calMinAll;  // Default values
+    calMin[i] = calMinAll;            // Default values
     calMax[i] = calMin[i] - calRange; // Default values
 
     // enable and turn off solenoid outputs
