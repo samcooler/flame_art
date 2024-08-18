@@ -1,6 +1,5 @@
 #include <Adafruit_PWMServoDriver.h>
 
-
 // PCA9539 i2c GPIO expander
 #include "src/lib/PCA9539.h"
 PCA9539 pca9539(0x77);
@@ -17,10 +16,10 @@ ArtnetWifi artnet;
 // SERVOS
 const int NUM_VALVES = 12;
 float valveStates[NUM_VALVES]; // Stores valve states (0.0 to 1.0)
-int calMinAll = 2000;
+int calMinAll = 2250;
 int calMin[NUM_VALVES];
 int calMax[NUM_VALVES];    // max calibration values, define below using range from min (microseconds)
-const int calRange = 1000; // msec also, low to high
+const int calRange = 1500; // msec also, low to high
 
 const int INTERVAL_MAX = 1400;
 const int INTERVAL_MIN = 300;
@@ -52,9 +51,9 @@ ValveData valveData[NUM_VALVES];
 
 // It is always attempting to connect to the network and receive network packets.
 // If it receives a network packet, it stops using 'artMode' to update valves and solenoids.
-// 
+//
 
-// Either it is running "artMode", where it is 
+// Either it is running "artMode", where it is
 // or it is listening for network t
 bool artModeActive = false;
 // if switch1, forceArtMode, but switch2 unforces it
@@ -160,7 +159,7 @@ void displayValves(unsigned long currentTime, bool force = 0)
 // ValveNum is the pin number on the controller
 void setSolenoidState(int valveNum, bool state)
 {
-  pca9539.digitalWrite(valveNum, state);  
+  pca9539.digitalWrite(valveNum, state);
 }
 
 //
@@ -290,22 +289,20 @@ void onDmxFrame(uint16_t universe, uint16_t numBytesReceived, uint8_t sequence, 
 
 int switch1 = -1;
 int switch2 = -1;
-int switch3 = -1; 
+int switch3 = -1;
 
 void readSwitches()
 {
 
-// this doesn't seem to work?
-//  switch1 = pca9539.digitalRead(12);
-//  switch2 = pca9539.digitalRead(13);
-//  switch3 = pca9539.digitalRead(14);
+  // this doesn't seem to work?
+  //  switch1 = pca9539.digitalRead(12);
+  //  switch2 = pca9539.digitalRead(13);
+  //  switch3 = pca9539.digitalRead(14);
 
-switch1 = 0;
-switch2 = 0;
-switch3 = 0;
-
-}  
-
+  switch1 = 0;
+  switch2 = 0;
+  switch3 = 0;
+}
 
 //
 //
@@ -319,7 +316,7 @@ void setup()
   delay(1000);
   Serial.println("START");
 
-  // initialize solenoid pins 
+  // initialize solenoid pins
   pca9539.pinMode(pca_A0, OUTPUT); // 0
   pca9539.pinMode(pca_A1, OUTPUT); // 1
   pca9539.pinMode(pca_A2, OUTPUT); // 2
@@ -367,7 +364,7 @@ void setup()
   // Start trying to connect to wifi
   beginWifi();
 
-  // 
+  //
   Serial.println("Servos: all 0.5");
   // Set each valve to zero (again)
   for (int i = 0; i < NUM_VALVES; i++)
@@ -428,7 +425,7 @@ void loop()
   }
 
   // art mode if it's forced, not if it's prevented, or if its been a while since a packet
-  if ((!preventArtMode) && 
+  if ((!preventArtMode) &&
       (forceArtMode || (currentTime > millisLastArtnet + ARTNET_PACKET_DELAY)))
   {
     if (artModeActive == false)
