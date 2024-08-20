@@ -67,7 +67,42 @@ cd ~/flame_art/flame_test
 pip install -r requirements.txt
 ```
 
-## service
+## service and autostart
 
-Copy `flame_test.service` to `/etc/systemd/system` (with sudo of course). This will allow `sudo systemctl status flame_test` and `sudo systemctl enable flame_test` .
+
+Copy `flamatik.service` and `launchpad.service` to `/etc/systemdsystem` (with sudo of course). This will allow `sudo systemctl status flame_test` and `sudo systemctl enable flame_test` .
+
+```
+sudo cp flamatik.service /etc/systemd/system
+sudo cp launchpad.service /etc/systemd/system
+sudo cp systemctl enable flamatik.service
+sudo cp systemctl enable launchpad.service
+```
+
+## Manual control of autostart
+
+Replace flamatik with launchpad as necessary.
+
+To stop a service from autostarting:
+
+```
+sudo systemctl disable flamatik.service
+```
+
+To have a service autostart:
+```
+sudo systemctl enable flamatik.service
+```
+
+Starting, stopping, and restarting all follow the same pattern.
+```
+sudo systemctl restart flamatik.service
+```
+is very useful after you change a playlist or config file.
+
+To look at the output of a service:
+```
+journalctl -u flamatik.service -r
+```
+( this prints the most recent at the top which is most useful)
 

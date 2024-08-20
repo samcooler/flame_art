@@ -10,11 +10,43 @@ It also can be used with the simulator.
 
 # use
 
+## NOTE
+
+This is run in production with an auto start script.
+
+See the `pi_config` directory readme for how to start and stop in production using systemctl !
+
 ## installation
 
-Install a recent python. Tested with 3.12.
+Install a recent python. Tested with 3.12. Current Ubuntu python is 3.10, so tested there too (sam's laptop).
 
-Install the necessary python packages. `pip install -r requirements.txt`
+There is a virtual environment checked in, which isn't good practice. It only works on Sam's laptop.
+
+The production Raspberry PI is a Pi 3B. It is running Raspberrian Bullseye. 
+
+To built the python execution environment for a PI, I suggest running pyenv. https://github.com/pyenv/pyenv . This allows easy use of different python versions, then integrates well with `venv`. Basically:
+```
+curl https://pyenv.run | bash
+```
+
+Follow the instructions about putting `pyenv` in your path and running init for the shims. I placed this code in both `.profile` and 
+
+```
+sudo apt update
+sudo apt install build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev cmake
+pyenv install 3.12.5
+```
+
+This install command takes A Very Long Time on a Pi 3B.
+
+Install the necessary python packages, although you also need cmake. 
+
+```
+sudo apt install cmake
+pip install -r requirements.txt
+```
+
+(noted: numpy 2.0.1 doesn't seem to install on this machine. It wants a newer version of Git. Perhaps we can try 1.24.4 or 1.21.6. `pip install numpy=xxx`
 
 On windows, you may need to required the C++ build tools in order to get the tools `netifaces` requires. This can be done through `choco install visualcpp-build-tools` or by installing Visual Studio Code, and installing the C++ package, and correctly adding to path.
 
