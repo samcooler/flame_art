@@ -110,9 +110,10 @@ class LaunchpadMiniMk2():
             "black": 0,
             "red": 15,
             "blue": 47,
+            "green": 60,
             "teal": 33,
             "purple": 53,
-            "yellow": 62
+            "yellow": 127
         }
 
         self.mode_setup()
@@ -200,8 +201,6 @@ class LaunchpadMiniMk2():
 
         self.buttons_clear()
 
-        self.mode_set(1)
-
         return True
 
     def disconnect(self):
@@ -219,6 +218,11 @@ class LaunchpadMiniMk2():
 
     # 0 index
     def mode_set(self, index: int):
+        # check to see if there is a valid handler ignore if not
+        if self.mode_handlers[index] == None:
+            print(f' Mode {index} not supported or registered')
+            return
+
         # clear the old button
         if self.mode >= 0:
             self.button_color_set('mode', 0, self.mode, self.colors['off'] )
@@ -227,7 +231,6 @@ class LaunchpadMiniMk2():
                 self.mode_handlers[self.mode].clear()
         # set the new
         self.mode = index
-        print(f' setting mode button {self.mode} color to red')
         self.button_color_set('mode', row=0, column=self.mode, color=self.colors['red'])
 
     # get the current mode object
@@ -242,9 +245,9 @@ class LaunchpadMiniMk2():
     # if error, 'unknown'
 
     def categorize_note(self, note: int, velocity: int) -> ButtonEvent :
-        print(f' categorize note: {note} velocity {velocity}')
+        # print(f' categorize note: {note} velocity {velocity}')
         action = 'up' if velocity == 0 else 'down'
-        print(f' categorize note: action {action}')
+        # print(f' categorize note: action {action}')
 
         row = int(note / 16)
         column = note % 16
@@ -262,9 +265,9 @@ class LaunchpadMiniMk2():
     # return is 0 for the first button (zero index)
     def categorize_cc(self, note: int, velocity: int) -> ButtonEvent:
         action = 'down' if velocity == 0 else 'up'
-        print(f' categorize cc: {note}')
+        # print(f' categorize cc: {note}')
         if note >= 104 and note <= 111:
-            print(f'cc : mode : button {note - 104}')
+            # print(f'cc : mode : button {note - 104}')
             return ButtonEvent('mode', action, 0, note-104)
         else:
             raise AttributeError(f' cc {note} unexpected in categorize cc')
@@ -279,7 +282,7 @@ class LaunchpadMiniMk2():
                 if status == 144:  # Note event
 
                     be = self.categorize_note(note, velocity)
-                    print(f"Button type {be.type} row {be.row} column {be.column} (note {note},vel {velocity})")
+                    # print(f"Button type {be.type} row {be.row} column {be.column} (note {note},vel {velocity})")
 
                     # pass to the mode handler
                     mode = self.mode_get()
@@ -294,7 +297,7 @@ class LaunchpadMiniMk2():
                     if event.type != 'mode':
                         return
                     if event.action == 'down' : # keypress
-                        print(f"Mode Button {event.column} pressed")
+                        # print(f"Mode Button {event.column} pressed")
                         self.mode_set(event.column)
 
                 else:
@@ -453,7 +456,7 @@ class LatchMode(Mode):
 
 
     def buttonEvent(self, be: ButtonEvent) -> None:
-        print(f' Latch Mode received button event ')
+        # print(f' Latch Mode received button event ')
         if be.type == 'pad' and be.action == 'down' :
 
             n = be.row * 8 + be.column
@@ -462,14 +465,14 @@ class LatchMode(Mode):
                 return
 
             if (self.pad_states[be.row][be.column] <= 0):
-                print(f' press pad {be.row} {be.column}')
+                # print(f' latch first press pad {be.row} {be.column}')
                 self.pad_states[be.row][be.column] = 1
                 self.lpm.button_color_set('pad', be.row, be.column, self.lpm.colors['red']) # red
                 self.osc_xmit.nozzles[n] = True
 
             # already on
             else:
-                print(f' momentary second press pad {be.row}, {be.column}')
+                # print(f' latch second press pad turning off {be.row}, {be.column}')
                 self.pad_states[be.row][be.column] = 0
                 self.lpm.button_color_set('pad', be.row, be.column, self.lpm.colors['off']) # black turn off
                 self.osc_xmit.nozzles[n] = False
@@ -494,7 +497,8 @@ class MomentaryMode(Mode):
         self.osc_xmit = osc_xmit
 
     def buttonEvent(self, be: ButtonEvent) -> None:
-        print(f' Momentary Mode received button event ')
+        # print(f' Momentary Mode received button event {be.action} r {be.row} c {be.column}')
+
         if be.type == 'pad' :
 
             n = be.row * 8 + be.column
@@ -503,8 +507,8 @@ class MomentaryMode(Mode):
                 return
 
             if be.action == 'down':
-                print(f'Momentary Mode: button down turnning off fire and clearing button')
-                self.lpm.button_color_set('pad', be.row, be.column, self.lpm.colors['red']) # red
+                print(f'Momentary Mode: button down turnning on fire and setting button')
+                self.lpm.button_color_set('pad', be.row, be.column, self.lpm.colors['green']) # red
                 self.osc_xmit.nozzles[n] = True
 
             elif be.action == 'up':
@@ -582,8 +586,8 @@ def main():
     xmit_thread_init(osc_xmit)
 
     # create the modes and register them
-    launchpad.mode_register( LatchMode(launchpad, osc_xmit ), 0)
-    launchpad.mode_register( MomentaryMode(launchpad, osc_xmit), 1)
+    launchpad.mode_register( MomentaryMode(launchpad, osc_xmit), 0)
+    launchpad.mode_register( LatchMode(launchpad, osc_xmit ), 1)
     launchpad.mode_register( PatternMode(launchpad), 2)
     launchpad.mode_set(0)
 
