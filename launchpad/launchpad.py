@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # Author: Brian Bulkowski brian@bulkowski.org
 #
@@ -13,11 +13,11 @@
 # 
 
 
-
 from time import sleep, time
 import argparse
 from typing import Tuple
 from threading import Thread, Event, Lock
+from abc import ABC, abstractmethod
 import math
 import logging
 
@@ -31,13 +31,51 @@ import netifaces
 import os
 import sys
 
+
 LAUNCHPAD_STR1 = 'Launchpad Mini'
 LAUNCHPAD_STR2 = 'Novation USB'
 
+#
+# type = 'mode', 'pad', 'function' (mode is along the top, function is the side)
+# action = 'up' 'down'
+# row, column is integer 0 to 8
+# for 'mode' (along the top) column is which row is 0, for 'function' row is filled, column is 0
+class ButtonEvent():
+    def __init__(self, type: str, action: str, row: int = 0, column: int = 0 ):
+        if type not in ['mode', 'pad', 'function']:
+            raise ValueError(f'Cant create ButtonEvent with bad type {type}')
+        if action not in ['up', 'down']:
+            raise ValueError(f'Cant create ButtonEvent with bad action {action} ')
+        if row < 0 or row >= 8:
+            raise ValueError(f'Cant create ButtonEvent bad row value {row}')
+        if column < 0 or column >= 8:
+            raise ValueError(f'')
+
+        self.type = type
+        self.action = action
+        self.row = row
+        self.column = column
+
+
+# this is an abstract interface
+
+class Mode(ABC):
+    @abstractmethod
+    # receive a button event
+    def buttonEvent(self, be: ButtonEvent) -> None:
+        pass
+
+    @abstractmethod
+    # draw the entire state of the launchpad
+    def drawPad(self) -> None:
+        pass
+
+    def clear(self) -> None:
+        pass
 
 class LaunchpadMiniMk2():
 
-    def __init__(self, mode_handler, function_handler, pad_handler) -> None:
+    def __init__(self) -> None:
 
         # Initialize the MIDI output and input
         self.midi_out = rtmidi.MidiOut()
@@ -46,10 +84,6 @@ class LaunchpadMiniMk2():
         # Find the Launchpad Mini Mk2
         self.launchpad_in_port = None
         self.launchpad_out_port = None
-
-        self.mode_handler = mode_handler
-        self.function_handler = function_handler 
-        self.pad_handler = pad_handler
 
         for i, port in enumerate(self.midi_in.get_ports()):
             if LAUNCHPAD_STR1 in port:
@@ -73,6 +107,7 @@ class LaunchpadMiniMk2():
 
         self.colors = {
             "off": 0,
+            "black": 0,
             "red": 15,
             "blue": 47,
             "teal": 33,
@@ -80,9 +115,12 @@ class LaunchpadMiniMk2():
             "yellow": 62
         }
 
+        self.mode_setup()
 
+        self.keymap_setup()
 
-        self.setup_keymap()
+        self.mode = 0
+
 
     # mode handler: 'on' / 'off' , id [ 0 to 7 ]
     # function handler: 'on' / 'off' , id [ 0 to 7 ]
@@ -94,7 +132,7 @@ class LaunchpadMiniMk2():
         self.pad_handler = pad_handler
 
 
-    def setup_keymap(self):
+    def keymap_setup(self):
         # construct a map of buttons
         # the keys are 0, to 7, along the top row,
         # but then 16 through 17 along the next row
@@ -111,7 +149,6 @@ class LaunchpadMiniMk2():
         # let's put 0,0 in the upper left
         self.pads = [[-1] * 8 for _ in range(8)]
 
-        self.pad_states = [[-1] * 8 for _ in range(8)]
 
         noz = 0
         for row in range(0,8):
@@ -123,59 +160,112 @@ class LaunchpadMiniMk2():
                     return
                 noz += 1
 
+    ## SET COLOR FUNCTION
 
-    def clear_leds(self):
+    # row, column : 0,0 is upper left
+    def button_color_set(self, type:str, row:int, column:int, color:int):
+        if type == 'function':
+            self.midi_out.send_message([144, (row * 16) + 8, color]) 
+
+        elif type == 'pad':
+            self.midi_out.send_message([144, (row * 16) + column, color]) 
+
+        elif type == 'mode':
+            self.midi_out.send_message([176,column + 104, color])
+
+        else:
+            raise AttributeError(" setting a color to an incorrect type")
+
+    def buttons_clear(self):
         # there's actually not this number but its eaiser than getting the rows and columns correct
-        for note in range(0,121):
-            self.midi_out.send_message([144, note, 0])  # off
+        print(f' clear leds ')
+        for r in range(8):
+            for c in range(8):
+                self.button_color_set('pad',r,c,0)
+        for i in range(8):
+            self.button_color_set('function',i,0,0)
+            self.button_color_set('mode',0,i,0)
 
-        for cc in range(104,112):
-            self.midi_out.send_message([176, note, 0])  # off
 
     def connect(self) -> bool:
         if self.launchpad_in_port is None or self.launchpad_out_port is None:
             print("Launchpad Mini Mk2 not found.")
             return False
-        else:
-            print(f'Found Launchpad mini at input port {self.launchpad_in_port} output {self.launchpad_out_port}')
-            self.midi_out.open_port(self.launchpad_out_port)
-            self.midi_in.open_port(self.launchpad_in_port)
-            print(f"Connected to Launchpad")
-            return True
+
+        print(f'Found Launchpad mini at input port {self.launchpad_in_port} output {self.launchpad_out_port}')
+        self.midi_out.open_port(self.launchpad_out_port)
+        self.midi_in.open_port(self.launchpad_in_port)
+        print(f"Connected to Launchpad")
+
+        self.buttons_clear()
+
+        self.mode_set(1)
+
+        return True
 
     def disconnect(self):
         self.midi_out.close_port()
         self.midi_in.close_port()
+
+    def mode_setup(self):
+        # this is a dictionary comprehension
+        self.mode_handlers = {i: None for i in range(8)}
+
+    def mode_register(self, mode: Mode, index: int ):
+        if index >= 8:
+            raise AttributeError(f' mode register: index {index} out of range')
+        self.mode_handlers[index] = mode
+
+    # 0 index
+    def mode_set(self, index: int):
+        # clear the old button
+        if self.mode >= 0:
+            self.button_color_set('mode', 0, self.mode, 0 )
+            # call the clear function on the old handler if there was one
+            if self.mode_handlers[self.mode] != None:
+                self.mode_handlers[self.mode].clear()
+        # set the new
+        self.mode = index
+        print(f' setting mode button {self.mode} color to red')
+        self.button_color_set('mode', row=0, column=self.mode, color=self.colors['red'])
+
+    # get the current mode object
+    def mode_get(self) -> Mode:
+        return self.mode_handlers[self.mode]
+
+
 
     # str is pad or function
     # if pad, x / y
     # if function, 0 to 7 (side buttons)
     # if error, 'unknown'
 
-    def categorize_note(self, note: int) -> Tuple[str, int, int] :
+    def categorize_note(self, note: int, velocity: int) -> ButtonEvent :
         # print(f' categorize note: id {id}')
+        action = 'down' if velocity == 0 else 'up'
+
         row = int(note / 16)
         column = note % 16
         t = 'pad'
-        if (column == 8):
-            t = 'function'
-        elif (column == 9):
-            t = 'unknown'
-        if row > 7:
-            t = 'unknown'
-        # print(f' caegorized as: type {t} row {row} column {column}')
-        return( t, row, column )
+        if column < 8:
+            return ButtonEvent('pad',action,row,column)
+        elif (column == 8):
+            return ButtonEvent('function',action,row,0)
+        else:
+            raise AttributeError(f'note {note} unexpected in categorize note')
 
 
     # cc is always mode (top)
     # -1 is unknown
-    def categorize_cc(self, note: int) -> Tuple[str, int]:
+    # return is 0 for the first button (zero index)
+    def categorize_cc(self, note: int, velocity: int) -> ButtonEvent:
+        action = 'down' if velocity == 0 else 'up'
         print(f' categorize cc: {note}')
         if note >= 104 and note <= 111:
             print(f'cc : mode : button {note - 104}')
-            return( 'mode', note - 104)
-        return('unknown', -1)
-
+            return ButtonEvent('mode', action, 0, note-104)
+        else:
+            raise AttributeError(f' cc {note} unexpected in categorize cc')
 
     def read(self):
         while True:
@@ -184,59 +274,26 @@ class LaunchpadMiniMk2():
                 data, _ = msg
                 status, note, velocity = data
 
-                if status == 144:  # Note on
+                if status == 144:  # Note event
 
-                    t, row, column = self.categorize_note(note)
-                    # print(f"Button type {t} row {row} column {column} (note {note},vel {velocity})")
+                    be = self.categorize_note(note, velocity)
+                    print(f"Button type {be.type} row {be.row} column {be.column} (note {note},vel {velocity})")
 
-                    # first 4 rows of pads will be latching, rest will be momentary
-                    latching = False
-                    if row < 4:
-                        latching = True
-
-                    if velocity > 0:
-
-                        if t != 'pad':
-                            print(f' non-pad button ignored ')
-                            return
-
-                        if latching:
-
-                            if (self.pad_states[row][column] == 1):
-                                print(f' release pad {row}, {column}')
-                                self.pad_states[row][column] = 0
-                                self.midi_out.send_message([status, note, 0]) # black
-                                self.pad_handler('up', row, column)
-                            else:
-                                print(f' press pad {row} {column}')
-                                self.pad_states[row][column] = 1
-                                self.midi_out.send_message([status, note, 15]) # red
-                                self.pad_handler('down', row, column)
-
-                        else:
-
-                            self.pad_states[row][column] = 1
-                            self.midi_out.send_message([status, note, 60]) # green
-                            self.pad_handler('down', row, column)
-
+                    # pass to the mode handler
+                    mode = self.mode_get()
+                    if mode:
+                        mode.buttonEvent(be)
                     else:
-                        # latching buttons ignore note:up
-                        if latching == False:
-                            self.pad_states[row][column] = 0
-                            self.midi_out.send_message([status, note, 0]) # off
-                            self.pad_handler('up', row, column)
+                        print(f'no mode registered')
 
+                # MODE BUTTONS - along top
                 elif status == 176: # control change, which is the 
-                    self.categorize_cc(note)
-                    if velocity > 0: # keypress
-                        print(f"Button {note} pressed (velocity {velocity})")
-                        # Turn on the corresponding LED
-                        # Red = 0, green = 63, blue = 0, with values from 0 to 63 for brightes
-                        self.midi_out.send_message([status, note, 60])  # Green light
-                    else:
-                        print(f"Button {note} released")
-                        # Turn off the corresponding LED
-                        self.midi_out.send_message([status, note, 0])
+                    event = self.categorize_cc(note, velocity)
+                    if event.type != 'mode':
+                        return
+                    if event.action == 'down' : # keypress
+                        print(f"Mode Button {event.column} pressed")
+                        self.mode_set(event.column)
 
                 else:
                     print(f'unknown message: status {status} note {note} velocity {velocity}')
@@ -373,29 +430,88 @@ def xmit_thread_init(xmit):
     BACKGROUND_THREAD.daemon = True
     BACKGROUND_THREAD.start()
 
+
+
 #
-# 
-
-# action is:
-# down, up 
+# Modes
+# Use the abstract base class to create an interface, create three different modes
 #
 
-def pad_action(action: str, row: int, column: int ):
-    # print(f' pad action {action} on row {row} column {column}')
-    global OSC_XMIT
 
-    # convert row and column to nozzle number
-    n = row * 8 + column
-    if n >= NOZZLE_BUTTON_LEN:
-        print(f' nozzle button {row} {column} but only {NOZZLE_BUTTON_LEN}, ignoring')
+
+class LatchMode(Mode):
+
+    def __init__(self, lpm: LaunchpadMiniMk2, osc_xmit: OSCTransmitter):
+        self.lpm = lpm
+
+        self.osc_xmit = osc_xmit
+
+        # -1 means uninit, 0 means off, 1 means on - for fire
+        self.pad_states = [[-1] * 8 for _ in range(8)]
+
+
+    def buttonEvent(self, be: ButtonEvent) -> None:
+        print(f' Latch Mode received button event ')
+        if be.type == 'pad' and be.action == 'down' :
+
+            n = be.row * 8 + be.column
+            if n >= NOZZLE_BUTTON_LEN:
+                print(f' nozzle button {be.row} {be.column} but only {NOZZLE_BUTTON_LEN}, ignoring')
+                return
+
+            if (self.pad_states[be.row][be.column] <= 0):
+                print(f' press pad {be.row} {be.column}')
+                self.pad_states[be.row][be.column] = 1
+                self.lpm.button_color_set('pad', be.row, be.column, 15) # red
+                self.osc_xmit.nozzles[n] = True
+
+            # already on
+            else:
+                print(f' momentary second press pad {be.row}, {be.column}')
+                self.pad_states[be.row][be.column] = 0
+                self.lpm.button_color_set('pad', be.row, be.column, 0) # black turn off
+                self.osc_xmit.nozzles[n] = False
+
+
+    def drawPad(self) -> None:
         return
 
-    if action == 'down':
-        print(f' FIRE NOZZLE {n}')
-        OSC_XMIT.nozzles[n] = True
-    else:
-        print(f' UNFIRE NOZZLE {n}')
-        OSC_XMIT.nozzles[n] = False
+    def clear(self) -> None:
+        self.pad_states = [[-1] * 8 for _ in range(8)]
+        for r in range(8):
+            for c in range(8):
+                self.lpm.button_color_set('pad', r, c, 0) # black turn off
+        for n in range(NOZZLE_BUTTON_LEN):
+            self.osc_xmit.nozzles[n] = False
+        return
+
+class MomentaryMode(Mode):
+    def __init__(self, lpm: LaunchpadMiniMk2, osc_xmit: OSCTransmitter):
+        self.lpm = lpm
+
+
+    def buttonEvent(self, be: ButtonEvent) -> None:
+        print(f'Momentary Mode: button event {be}')
+
+
+    def drawPad(self) -> None:
+        return
+
+    def clear(self) -> None:
+        return
+
+class PatternMode(Mode):
+    def __init__(self, lpm: LaunchpadMiniMk2):
+        self.lpm = lpm
+
+    def buttonEvent(self, be: ButtonEvent) -> None:
+        print(f'Pattern Mode: button event {be}')
+
+    def drawPad(self) -> None:
+        return
+
+    def clear(self) -> None:
+        return
 
 
 def mode_action(action: str, b: int):
@@ -421,23 +537,26 @@ def args_init():
 
 def main():
 
-    global OSC_XMIT
 
     args = args_init()
 
     # get the launchpad and init
 
-    launchpad = LaunchpadMiniMk2(mode_action, function_action, pad_action)
+    launchpad = LaunchpadMiniMk2()
     if not launchpad.connect():
         print(f'no launchpad connected')
         return
 
-    launchpad.clear_leds()
-
     # create an OSC transmitter
-    OSC_XMIT = OSCTransmitter(args)
+    osc_xmit = OSCTransmitter(args)
 
-    xmit_thread_init(OSC_XMIT)
+    xmit_thread_init(osc_xmit)
+
+    # create the modes and register them
+    launchpad.mode_register( LatchMode(launchpad, osc_xmit ), 0)
+    launchpad.mode_register( MomentaryMode(launchpad, osc_xmit), 1)
+    launchpad.mode_register( PatternMode(launchpad), 2)
+    launchpad.mode_set(0)
 
     # read the launchpad repeatedly. 
     try:
