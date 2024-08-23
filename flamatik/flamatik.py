@@ -69,6 +69,7 @@ from typing import List, Any
 import logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
+STATUS_PORT = 6510
 
 OSC_PORT = 6511 # a random number. there is no OSC port because OSC is not a protocol
 
@@ -226,6 +227,10 @@ class LightCurveState:
     def print_solenoid(self):
         print(self.s.solenoids)
 
+# 
+# This transmitter class sends packets to the control boards.
+#
+
 
 class LightCurveTransmitter:
 
@@ -298,17 +303,11 @@ class LightCurveTransmitter:
                 #         (self.state.s.apertures[aperture] < 0.0) or (self.state.s.apertures[aperture] > 1.0)):
                 #     print(f'flow at {i+offset} out of range {self.state.s.apertures[aperture]} skipping')
 
-# FILTER
-# In the case where the solenoid and aperture are mapped to the same physical device,
-# it is useful to turn off the solenoid when the aperture value is small. However, before mapping,
-# it doesn't work, because the apertures and nozzles are not the same physical device.
-
-#                if self.state.s.apertures[i+offset] < 0.10:
-#                    print(f'force to 0 solenoid {i+offset}')
-#                    packet[ARTNET_HEADER_SIZE + (i*2) ] = 0
-#                else:
-
                 # compose in the buttons if enabled
+
+                # if the flag is set, override what the pattern wants with the information
+                # we received over OSC. This is a very primitive form of pattern mixing.
+                # We could also build a more arbitrary one.
 
                 if use_buttons and (self.state.s.nozzle_buttons[solenoid]):
                     # print(f' firing logical {i} physical {solenoid} because button')
@@ -376,6 +375,129 @@ def transmitter_server_shutdown():
     TRANSMITTER_PROCESS.join()
 
 
+#
+# This transmitter class sends broadcast packets with status
+# it allows controllers to find Flamatik, and allows them to display
+# any number of status things.
+#
+# Had a big question about what protocol is best for this kind of thing.
+# OSC seems a little weird, JSON seems that way too. May switch.
+#
+# The status here is in 'abstract nozzels' not physical nozzels,
+# so we don't need as much information about the config files
+#
+# Like the other classes here, this will run in its own process and
+# read from the shared memory in the LightCurveState
+#
+
+
+class LightCurveStatusXmit:
+
+    def __init__(self, state: LightCurveState) -> None:
+
+        print('initialize light curve status transmitter')
+
+        self.state = state
+        self.sequence = 0
+        # override this if you want just the transmitter debugging
+        self.debug = state.debug
+
+        self.port = STATUS_PORT
+
+        # since we want uptime, store the start time (close enough)
+        self.start_time = time()
+        self.sequence = 0
+
+        # create outbound socket
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # UDP
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+        # find a good address to send to
+        # more robust code would consider checking this every so often and sending to a different
+        # address, or, at least, catching errors sent to this address and looking for a new value?
+        if state.args.broadcast != "":
+            self.address = state.args.broadcast
+        else:
+            bs = get_broadcast_addresses()
+            if len(bs) == 1:
+                self.address = bs[0]
+            elif len(bs) == 0:
+                print(f' attempting to find a broadcast address but none configured none available')
+                self.address = ""
+            elif len(bs) > 1:
+                print(f'warning! more than one broadcast address! {bs}')
+                self.address = bs[0]
+        print(f' StatusXmit on address {self.address}')
+
+
+    # call each time
+    def transmit(self) -> None:
+
+        print(f'status transmit') if self.debug else None
+
+        # build a data structure that has the info we'er interesting in
+
+        data = {
+            "id": "lightcurve",
+            "version": "1.0",
+            "uptime": time() - self.start_time,
+            "nozzles": self.state.s.solenoids[:], # take a copy for transmission
+            "apertures": self.state.s.apertures[:],
+            "gyro": self.state.s.gyro[:],
+            "rotation": self.state.s.rotation[:],
+            "gravity": self.state.s.gravity[:],
+            "seq": self.sequence # allows estimation of packet loss
+        }
+        self.sequence += 1
+
+        # the separators command greatly decreases the size by removing unnecessary spaces
+        # slightly better code would also round the values in floating point to only 2 figures,
+        # this is done with a custom encoder, you can look it up TODO
+        json_data = json.dumps(data, separators=(',',':'))
+
+        byte_data = json_data.encode('ascii')
+
+        # todo: add the correct outbound address, which has to be looked up
+        # and thus be on the right interface broadcast
+        self.sock.sendto(byte_data,(self.address,self.port))
+
+
+
+# background 
+
+# see comment about state, it is a cross process shared object.
+# this function is a separate process
+
+def status_xmit_server(state: LightCurveState):
+
+    xmit = LightCurveStatusXmit(state)
+
+    # delay = 1.0 / state.args.fps
+    delay = 1.0 / 5.0 # hardcode FPS to 5 to avoid network thrash
+    # print(f'delay is {delay} fps is {xmit.fps}')
+    try:
+        while True:
+            t1 = time()
+
+            xmit.transmit()
+
+            d = delay - (time() - t1)
+            if (d > 0.002):
+                sleep(d)
+
+    except KeyboardInterrupt:
+        pass
+
+
+def status_xmit_server_init(state: LightCurveState):
+
+    print('status xmit server init')
+    process = Process(target=status_xmit_server, args=(state,) )
+    # going to use Daemon because we don't need a clean shutdown, we're just sending status
+    process.daemon = True
+    process.start()
+
+
 
 # it appears in python when we set up a broadcast listerner
 # we would just listen on 0.0.0.0 so we probably won't need any of this
@@ -396,6 +518,23 @@ def get_interface_addresses():
 
     print(f'interfaces addresses are: {interface_addrs}')
     return interface_addrs
+
+BROADCAST_BLACKLIST = [ '172.26.47.255', '127.255.255.255']
+
+def get_broadcast_addresses():
+    interfaces = netifaces.interfaces()
+    interface_broadcasts = []
+
+    for interface in interfaces:
+        addresses = netifaces.ifaddresses(interface)
+        if netifaces.AF_INET in addresses:
+            ipv4_info = addresses[netifaces.AF_INET][0]
+            broadcast_address = ipv4_info.get('broadcast')
+            if broadcast_address and broadcast_address not in BROADCAST_BLACKLIST:
+                interface_broadcasts.append(broadcast_address)
+
+    # print(f'broadcast addresses are: {interface_broadcasts}')
+    return interface_broadcasts
 
 # handler has the address then a tuple of the arguments then the self argument of the receiver
 # Not yet sure how to get the timestamp out of the bundle
@@ -701,6 +840,7 @@ def args_init():
 
     parser.add_argument('--pattern', '-p', default="pulse", type=str, help=f'pattern one of: {patterns()}')
     parser.add_argument('--address', '-a', default="0.0.0.0", type=str, help=f'address to listen OSC on defaults to broadcast on non-loop')
+    parser.add_argument('--broadcast', '-b', default="", type=str, help='use a specific broadcast address to send status')
     parser.add_argument('--fps', '-f', default=15, type=int, help='frames per second')
     parser.add_argument('--repeat', '-r', default=9999, type=int, help="number of times to run pattern")
     parser.add_argument('--nobuttons',  action='store_true', help="add this if you want to disable the button function")
@@ -749,7 +889,12 @@ def main():
             return
 
         # creates a transmitter background process that reads from the shared state
+        # and sends to controllers (unicast)
         transmitter_server_init(state)
+
+        # create a status transmitter which broadcasts over the local network
+        # some interesting information
+        status_xmit_server_init(state)
 
         # creates a osc server receiver process which fills the shared state
         osc_server_init(state, args)
