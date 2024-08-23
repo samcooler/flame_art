@@ -179,12 +179,13 @@ class LaunchpadMiniMk2():
     def buttons_clear(self):
         # there's actually not this number but its eaiser than getting the rows and columns correct
         print(f' clear leds ')
+        off = self.colors['off']
         for r in range(8):
             for c in range(8):
-                self.button_color_set('pad',r,c,0)
+                self.button_color_set('pad',r,c,off)
         for i in range(8):
-            self.button_color_set('function',i,0,0)
-            self.button_color_set('mode',0,i,0)
+            self.button_color_set('function',i,0,off)
+            self.button_color_set('mode',0,i,off)
 
 
     def connect(self) -> bool:
@@ -220,7 +221,7 @@ class LaunchpadMiniMk2():
     def mode_set(self, index: int):
         # clear the old button
         if self.mode >= 0:
-            self.button_color_set('mode', 0, self.mode, 0 )
+            self.button_color_set('mode', 0, self.mode, self.colors['off'] )
             # call the clear function on the old handler if there was one
             if self.mode_handlers[self.mode] != None:
                 self.mode_handlers[self.mode].clear()
@@ -241,8 +242,9 @@ class LaunchpadMiniMk2():
     # if error, 'unknown'
 
     def categorize_note(self, note: int, velocity: int) -> ButtonEvent :
-        # print(f' categorize note: id {id}')
-        action = 'down' if velocity == 0 else 'up'
+        print(f' categorize note: {note} velocity {velocity}')
+        action = 'up' if velocity == 0 else 'down'
+        print(f' categorize note: action {action}')
 
         row = int(note / 16)
         column = note % 16
@@ -462,14 +464,14 @@ class LatchMode(Mode):
             if (self.pad_states[be.row][be.column] <= 0):
                 print(f' press pad {be.row} {be.column}')
                 self.pad_states[be.row][be.column] = 1
-                self.lpm.button_color_set('pad', be.row, be.column, 15) # red
+                self.lpm.button_color_set('pad', be.row, be.column, self.lpm.colors['red']) # red
                 self.osc_xmit.nozzles[n] = True
 
             # already on
             else:
                 print(f' momentary second press pad {be.row}, {be.column}')
                 self.pad_states[be.row][be.column] = 0
-                self.lpm.button_color_set('pad', be.row, be.column, 0) # black turn off
+                self.lpm.button_color_set('pad', be.row, be.column, self.lpm.colors['off']) # black turn off
                 self.osc_xmit.nozzles[n] = False
 
 
@@ -480,7 +482,7 @@ class LatchMode(Mode):
         self.pad_states = [[-1] * 8 for _ in range(8)]
         for r in range(8):
             for c in range(8):
-                self.lpm.button_color_set('pad', r, c, 0) # black turn off
+                self.lpm.button_color_set('pad', r, c, self.lpm.colors['off']) # black turn off
         for n in range(NOZZLE_BUTTON_LEN):
             self.osc_xmit.nozzles[n] = False
         return
@@ -489,15 +491,42 @@ class MomentaryMode(Mode):
     def __init__(self, lpm: LaunchpadMiniMk2, osc_xmit: OSCTransmitter):
         self.lpm = lpm
 
+        self.osc_xmit = osc_xmit
 
     def buttonEvent(self, be: ButtonEvent) -> None:
-        print(f'Momentary Mode: button event {be}')
+        print(f' Momentary Mode received button event ')
+        if be.type == 'pad' :
 
+            n = be.row * 8 + be.column
+            if n >= NOZZLE_BUTTON_LEN:
+                print(f' nozzle button {be.row} {be.column} but only {NOZZLE_BUTTON_LEN}, ignoring')
+                return
+
+            if be.action == 'down':
+                print(f'Momentary Mode: button down turnning off fire and clearing button')
+                self.lpm.button_color_set('pad', be.row, be.column, self.lpm.colors['red']) # red
+                self.osc_xmit.nozzles[n] = True
+
+            elif be.action == 'up':
+                print(f'Momentary Mode: button up turnning off fire and clearing button')
+                self.lpm.button_color_set('pad', be.row, be.column, self.lpm.colors['off']) # off
+                self.osc_xmit.nozzles[n] = False
+
+            # already on
+            else:
+                print(f' momentary received unknonw action type {be.action} ignoring')
 
     def drawPad(self) -> None:
         return
 
     def clear(self) -> None:
+        # this shouldn't be necessary because when you press to move modes you shouldn't have
+        # a button down but it might happen
+        for r in range(8):
+            for c in range(8):
+                self.lpm.button_color_set('pad', r, c, self.lpm.colors['off']) # black turn off
+        for n in range(NOZZLE_BUTTON_LEN):
+            self.osc_xmit.nozzles[n] = False
         return
 
 class PatternMode(Mode):
