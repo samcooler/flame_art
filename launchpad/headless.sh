@@ -1,5 +1,5 @@
 #!/bin/sh
-echo "starting flamatik service with home $HOME"
+echo "starting launchpad service with home $HOME"
 # have to init pyenv
 export PYENV_ROOT="/home/pi/.pyenv"
 export PATH="$PYENV_ROOT/bin:$PATH"
@@ -9,6 +9,6 @@ eval "$(pyenv init -)"
 
 python --version
 
-python /home/pi/flame_art/flamatik/flamatik.py -c lightcurve.cnf -l playlist.json
+python /home/pi/flame_art/launchpad/launchpad.py
 
-echo "exiting flamatik service"
+echo "exiting launchpad service"

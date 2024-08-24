@@ -1,0 +1,15 @@
+[Unit]
+Description=Launchpad Autostart Service
+After=network.target
+
+[Service]
+ExecStart=/home/pi/flame_art/launchpad/headless.sh
+WorkingDirectory=/home/pi/flame_art/launchpad
+StandardOutput=inherit
+StandardError=inherit
+Restart=always
+RestartSec=5
+User=pi
+
+[Install]
+WantedBy=multi-user.target
