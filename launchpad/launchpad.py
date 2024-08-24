@@ -19,17 +19,26 @@ from typing import Tuple
 from threading import Thread, Event, Lock
 from abc import ABC, abstractmethod
 import math
+
 import logging
+import json
 
 import rtmidi
 
 from osc4py3.as_eventloop import *
 from osc4py3 import oscbuildparse, oscchannel, oscmethod as osm
 
+import requests
+import socket
 import netifaces
 
 import os
 import sys
+
+
+STATUS_PORT = 6510 # receive JSON status from Launchpad
+
+OSC_PORT = 6511 # transmit on this - a random number. there is no OSC port because OSC is not a protocol
 
 
 LAUNCHPAD_STR1 = 'Launchpad Mini'
@@ -72,6 +81,56 @@ class Mode(ABC):
 
     def clear(self) -> None:
         pass
+
+# this will have the last time we heard from the flamatik
+# and what address we heard from it on. Will be updated by the 
+# listener
+
+# if we don't receive data in 3 seconds, its dead
+FLAMATIK_TIMEOUT = 3.0
+
+class FlamatikStatus():
+    def __init__(self):
+        self.nozzles = 30
+        self.reset()
+
+    def reset(self) -> None:
+        self.address = ""
+        self.last_received = 0.0
+        self.uptime = 0.0
+
+        self.apertures = [0.0] * self.nozzles
+        self.solenoids = [0] * self.nozzles
+        self.gyro = [0.0] * 3
+        self.gravity = [0.0] * 3
+        self.position = [0.0] * 3       
+
+    def set(self, address: str,data) -> None:
+        #for k, v in data.items():
+        #    print(f' recevied flamatik status: {k} , {v}') 
+        self.last_received = time()
+        self.address = address
+        try:
+            if data["device"] != 'lightcurve':
+                print(f' device not a lightcurves')
+                return
+            self.uptime = data.get("uptime",0.0)
+            self.apertures = data["apertures"] if "apertures" in data else self.apertures
+            self.solenoids = data["solenoids"] if "solenoids" in data else self.solenoids
+            self.gyro = data["gyro"] if "gyro" in data else self.gyro
+            self.rotation = data["rotation"] if "rotation" in data else self.rotation
+            self.gravity = data["gravity"] if "gravity" in data else self.gravity
+
+        except:
+            print(f' received a status packet but missing a device specifier')
+
+
+    def isAlive(self) -> bool:
+        if self.last_received == 0.0:
+            return
+        if time() > self.last_received + FLAMATIK_TIMEOUT:
+            self.reset()
+
 
 class LaunchpadMiniMk2():
 
@@ -312,7 +371,6 @@ class LaunchpadMiniMk2():
 # OSC Transmitter
 #
 
-OSC_PORT = 6511 # a random number. there is no OSC port because OSC is not a protocol
 
 def get_broadcast_addresses():
     interfaces = netifaces.interfaces()
@@ -343,8 +401,6 @@ class OSCTransmitter:
 
         # array of values for the nozzle buttons
         self.nozzles = [False] * NOZZLE_BUTTON_LEN
-        # array of values for program control buttons
-        self.controls = [False] * CONTROL_BUTTON_LEN
 
         self.debug = args.debug
         self.sequence = 0
@@ -383,21 +439,17 @@ class OSCTransmitter:
         # prealloc code in string that makes it non terrible
         # also: it seems unnecessary to send both the type string and the value, but OSCMessage validates, so this is required.
         # send fails silently if you don't do this
+        #
+        # There's a problem using the same OSC name. The Flamatik receiver gets two sets of states, would be flipping
+        # between them. Therefore, gonna use two different OSC names. Alternately, it would be better
+        # to track via source IP/PORT, but that's more complex, maybe. Might switch to that?
         nozzles_str = ','
         for v in self.nozzles:
             if v:
                 nozzles_str += 'T'
             else:
                 nozzles_str += 'F'
-        msg_nozzles = oscbuildparse.OSCMessage('/LC/nozzles', nozzles_str, self.nozzles)
-
-        controls_str = ','
-        for v in self.controls:
-            if v:
-                controls_str += 'T'
-            else:
-                controls_str += 'F'
-        msg_controls = oscbuildparse.OSCMessage('/LC/controls', controls_str, self.controls)
+        msg_nozzles = oscbuildparse.OSCMessage('/LC/nozzles/1', nozzles_str, self.nozzles)
 
         try:
 
@@ -405,18 +457,12 @@ class OSCTransmitter:
 
                 osc_send(msg_nozzles, 'client')
                 osc_process()
-                osc_send(msg_controls, 'client')
-                osc_process()
 
         except Exception as e:
             logging.exception("an exception occurred with the osc sender")
 
 
     def fill_nozzles(self, val):
-        for i in range(len(self.nozzles)):
-            self.nozzles[i] = val
-
-    def fill_controls(self, val):
         for i in range(len(self.nozzles)):
             self.nozzles[i] = val
 
@@ -430,10 +476,9 @@ def xmit_thread(xmit):
         sleep(1.0 / 25.0)
 
 def xmit_thread_init(xmit):
-    global BACKGROUND_THREAD, xmit_event
-    BACKGROUND_THREAD = Thread(target=xmit_thread, args=(xmit,) )
-    BACKGROUND_THREAD.daemon = True
-    BACKGROUND_THREAD.start()
+    thread = Thread(target=xmit_thread, args=(xmit,) )
+    thread.daemon = True
+    thread.start()
 
 
 
@@ -546,13 +591,45 @@ class PatternMode(Mode):
     def clear(self) -> None:
         return
 
+#
+#
+# Thread for reading broadcasted status from Flamatik
+# It's both interesting and lets us know where to send commands (directed)
+#
 
-def mode_action(action: str, b: int):
-    print(f' mode action {action} on button {b}, ignoring')
+
+# background 
+
+class StatusReceiver():
+    def __init__(self):
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.bind(("0.0.0.0", STATUS_PORT))
+
+    def recv(self, flam: FlamatikStatus):
+        data, addr = self.sock.recvfrom(2000)
+
+        try:
+            json_data = data.decode('ascii')
+            parsed_data = json.loads(json_data)
+        except json.JSONDecodeError:
+            print(f' bad status data parse addr: {addr[0]} data {parsed_data}')
+            return
+
+        print(f' received uptime {parsed_data["uptime"]} from device {parsed_data["device"]} address {addr[0]}')
+       #  print(f' apertures: {parsed_data["apertures"]}')
+
+        flam.set(addr, parsed_data)
+
+def status_receiver_thread(recv, flam: FlamatikStatus):
+    while True:
+        recv.recv(flam)
+
+def status_receiver_init(recv, flam: FlamatikStatus):
+    thread = Thread(target=status_receiver_thread, args=(recv,flam) )
+    thread.daemon = True
+    thread.start()
 
 
-def function_action(action: str, b: int):
-    print(f' function action {action} on button {b} ignoring')
 
 
 def args_init():
@@ -580,10 +657,16 @@ def main():
         print(f'no launchpad connected')
         return
 
+    # create a flamatik status object
+    flam = FlamatikStatus()
+
     # create an OSC transmitter
     osc_xmit = OSCTransmitter(args)
-
     xmit_thread_init(osc_xmit)
+
+    # create a status receiver
+    status_recv = StatusReceiver()
+    status_receiver_init(status_recv, flam)
 
     # create the modes and register them
     launchpad.mode_register( MomentaryMode(launchpad, osc_xmit), 0)

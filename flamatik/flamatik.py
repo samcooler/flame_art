@@ -59,6 +59,9 @@ from pythonosc import osc_server
 import netifaces
 # importlib is necessary for the strange plugin system
 import importlib
+#
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import urlparse, parse_qs
 
 import glob 
 import os
@@ -72,6 +75,8 @@ logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %
 STATUS_PORT = 6510
 
 OSC_PORT = 6511 # a random number. there is no OSC port because OSC is not a protocol
+
+HTTP_PORT = 6509
 
 ARTNET_PORT = 6454
 ARTNET_UNIVERSE = 0
@@ -154,8 +159,8 @@ class LightCurveState:
 # not quite sure if I need a shared namespace or a simple namespace will do.
 # if all the objects in the namespace are themselves shared, then a simple namespace should work.
 # if there are any non-shared objects (eg, integers or strings), then I must use a shared namespace?
-#        self.s = manager.Namespace()
-        self.s = SimpleNamespace()
+# you need the shared namespace if you're going to have a straight member, like the nozzle buttons time.
+        self.s = manager.Namespace()
         s = self.s
         s.apertures = manager.list( [0.0] * self.nozzles )
         s.solenoids = manager.list( [0] * self.nozzles )
@@ -167,8 +172,10 @@ class LightCurveState:
         # the direction in which gravity currently is
         s.gravity = manager.list( [0.0] * 3 )
 
+        s.nozzle_buttons_last_recv = None
         s.nozzle_buttons = manager.list( [False] * NOZZLE_BUTTON_LEN )
-        s.control_buttons = manager.list( [False] * CONTROL_BUTTON_LEN )
+        s.nozzle_buttons_1_last_recv = None
+        s.nozzle_buttons_1 = manager.list( [False] * NOZZLE_BUTTON_LEN )
 
         self.debug = debug
 
@@ -226,6 +233,26 @@ class LightCurveState:
 
     def print_solenoid(self):
         print(self.s.solenoids)
+
+    # if you don't receive a packet after 1 second, turn off
+    # as usual, be careful with setting data in the shared structure. Has to change values, not the array
+    def nozzle_button_timeout_check(self):
+        now = time()
+        if self.s.nozzle_buttons_last_recv is not None:
+            # print(f' nozzle button last recv {self.s.nozzle_buttons_last_recv}')
+            if self.s.nozzle_buttons_last_recv + 1.0 < now:
+                print(f' nozzle button og timeout:')
+                self.s.nozzle_buttons_last_recv = None
+                for i in range(self.nozzles):
+                    self.s.nozzle_buttons[i] = False
+
+        if self.s.nozzle_buttons_1_last_recv is not None:
+            # print(f' nozzle button last recv {self.s.nozzle_buttons_1_last_recv}')
+            if self.s.nozzle_buttons_1_last_recv + 1.0 < now:
+                print(f' nozzle button 1 timeout:')
+                self.s.nozzle_buttons_1_last_recv = None
+                for i in range(self.nozzles):
+                    self.s.nozzle_buttons_1[i] = False
 
 # 
 # This transmitter class sends packets to the control boards.
@@ -308,16 +335,19 @@ class LightCurveTransmitter:
                 # if the flag is set, override what the pattern wants with the information
                 # we received over OSC. This is a very primitive form of pattern mixing.
                 # We could also build a more arbitrary one.
+                # also note that the button wants all the fire, so we have to also set the servo to 1.0
 
-                if use_buttons and (self.state.s.nozzle_buttons[solenoid]):
+                if use_buttons and ((self.state.s.nozzle_buttons[solenoid]) or (self.state.s.nozzle_buttons_1[solenoid])):
                     # print(f' firing logical {i} physical {solenoid} because button')
                     s = True
+                    a = 1.0
                 else:
                     s = self.state.s.solenoids[solenoid]
+                    a = self.state.s.apertures[aperture]
 
                 packet[ARTNET_HEADER_SIZE + (i*2) ] = s
 
-                packet[ARTNET_HEADER_SIZE + (i*2) + 1] = math.floor(self.nozzle_apply_calibration( aperture, self.state.s.apertures[aperture] ) )
+                packet[ARTNET_HEADER_SIZE + (i*2) + 1] = math.floor(self.nozzle_apply_calibration( aperture, a ) )
 
             # transmit
             if self.debug:
@@ -345,6 +375,9 @@ def transmitter_server(state: LightCurveState, terminate: Event):
             t1 = time()
 
             xmit.transmit()
+
+            # a bit of a hack to put it here, should have its own thread or process, sorry so lazy
+            state.nozzle_button_timeout_check()
 
             d = delay - (time() - t1)
             if (d > 0.002):
@@ -436,16 +469,17 @@ class LightCurveStatusXmit:
         print(f'status transmit') if self.debug else None
 
         # build a data structure that has the info we'er interesting in
+        # it would be good to round all the floats to save data
 
         data = {
-            "id": "lightcurve",
+            "device": "lightcurve",
             "version": "1.0",
-            "uptime": time() - self.start_time,
-            "nozzles": self.state.s.solenoids[:], # take a copy for transmission
-            "apertures": self.state.s.apertures[:],
-            "gyro": self.state.s.gyro[:],
-            "rotation": self.state.s.rotation[:],
-            "gravity": self.state.s.gravity[:],
+            "uptime": round(time() - self.start_time,3), # don't take up too much bandwidth
+            "solenoids": self.state.s.solenoids[:], # take a copy for transmission
+            "apertures": [round(item,3) for item in self.state.s.apertures[:]],
+            "gyro": [round(item,3) for item in self.state.s.gyro[:]],
+            "rotation": [round(item,3) for item in self.state.s.rotation[:]],
+            "gravity": [round(item,3) for item in self.state.s.gravity[:]],
             "seq": self.sequence # allows estimation of packet loss
         }
         self.sequence += 1
@@ -596,18 +630,19 @@ def osc_handler_nozzles(address: str, fixed_args: List[Any], *vals):
     if len(vals) != len(state.s.nozzle_buttons):
         print(f'Nozzle Buttons: expected {len(state.s.nozzle_buttons)} found len {len(vals)} ignoring')
         return
-#    for idx, v in enumerate(vals):
-#        if v:
-#            print(f' nozzle buttons: index {idx} is true ')
+    state.s.nozzle_buttons_last_recv = time()
     state.s.nozzle_buttons[:] = vals
 
-def osc_handler_controls(address: str, fixed_args: List[Any], *vals):
+# used to capture a second state diagram of buttons
+
+def osc_handler_nozzles_1(address: str, fixed_args: List[Any], *vals):
     state = fixed_args[0]
-    print(f' osc: controls {vals}') if state.debug else None
-    if len(vals) != len(state.s.control_buttons):
-        print(f'Control buttons: expected {len(state.s.control_buttons)} found {len(vals)} ignoring')
+    print(f' osc: nozzles 1 {vals}') if state.debug else None 
+    if len(vals) != len(state.s.nozzle_buttons):
+        print(f'Nozzle Buttons 1: expected {len(state.s.nozzle_buttons)} found len {len(vals)} ignoring')
         return
-    state.s.control_buttons[:] = vals
+    state.s.nozzle_buttons_1_last_recv = time()
+    state.s.nozzle_buttons_1[:] = vals
 
 
 #this has never worked
@@ -647,7 +682,7 @@ def osc_server(state: LightCurveState, address: str):
     dispatcher.map('/LC/imu', osc_handler_imu, state)
 
     dispatcher.map('/LC/nozzles', osc_handler_nozzles, state)
-    dispatcher.map('/LC/controls', osc_handler_controls, state)
+    dispatcher.map('/LC/nozzles/1', osc_handler_nozzles_1, state)
     dispatcher.set_default_handler(osc_handler_all, state)
 
     server = BlockingOSCUDPServer((address, OSC_PORT), dispatcher)
@@ -682,6 +717,41 @@ def osc_server_init(state: LightCurveState, args):
     OSC_PROCESS.daemon = True
     OSC_PROCESS.start()
 
+
+#
+# Command listener - HTTP
+# There are commands we wish to receive over reliable HTTP instead of continually broadcast over UDP
+# with OSC, like changing a pattern. This HTTP listener allows that.
+#
+#
+
+class CommandHandler(BaseHTTPRequestHandler):
+
+    def do_POST(self):
+        content_length = int(self.headers['Content-length'])
+        post_data = self.rfile.read(content_length)
+
+        try:
+            data = jsons.loads(post_data.decode('utf-8'))
+            print(f' received json command {data}')
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b'JSON COMMAND RECIEVED')
+        except json.JSONDecodeError:
+            print('Data is not JSON')
+
+
+def command_server(port):
+    try:
+        httpd = HTTPServer(('', port), CommandHandler)
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        pass
+
+def command_server_init(port=HTTP_PORT):
+    command_process = Process(target=command_server, args=(port,))
+    command_process.daemon = True
+    command_process.start()
 
 
 # useful helper function
@@ -898,6 +968,9 @@ def main():
 
         # creates a osc server receiver process which fills the shared state
         osc_server_init(state, args)
+
+        # creates an HTTP listener which can receive JSON or OSC commands like change pattern
+        command_server_init()
 
 
         try:
