@@ -30,6 +30,6 @@ def pattern_trail(state: ft.LightCurveState) -> bool:
             d = m.dot(m.nozzle_vectors[nozzle], motion_direction)
             if d > 0.0:
                 state.s.solenoids[nozzle] = 1
-                state.s.apertures[nozzle] = min(d, 1.0)
+                state.s.apertures[nozzle] = min(d * d, 1.0)
 
     sleep(0.05)
