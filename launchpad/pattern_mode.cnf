@@ -1,0 +1,6 @@
+[
+	{ "row": 0, "column": 0, "pattern": "off"},
+	{ "row": 0, "column": 1, "pattern": "poof"},
+	{ "row": 0, "column": 2, "pattern": "pulse"},
+	{ "row": 0, "column": 3, "pattern": "comet"}
+]

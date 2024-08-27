@@ -733,12 +733,41 @@ class CommandHandler(BaseHTTPRequestHandler):
 
         try:
             data = jsons.loads(post_data.decode('utf-8'))
-            print(f' received json command {data}')
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b'JSON COMMAND RECIEVED')
+            print(f' received json command at {self.path} :: {data}')
+
+            # build a response put it in json_response
+            json_response = ""
+
+            json_bytes = json.dumps(json_response).encode('utf-8')
+
+            response = ( "HTTP/1.1 200 OK\r\n"
+                        "Content-type: application/json\r\n"
+                        f'Content-length: {len(json_bytes)}\r\n'
+                        "\r\n"
+                        ).encode('utf-8') + json_bytes
+
+            self.wfile.write(response)
+
         except json.JSONDecodeError:
             print('Data is not JSON')
+            self.send_response(200)
+            self.end_headers()
+
+    def do_GET(self):
+        print(f' received get URI {self.path}')
+
+        # put the response in json_response
+        json_response = ""
+
+        json_bytes = json.dumps(json_response).encode('utf-8')
+
+        response = ( "HTTP/1.1 200 OK\r\n"
+                    "Content-type: application/json\r\n"
+                    f'Content-length: {len(json_bytes)}\r\n'
+                    "\r\n"
+                    ).encode('utf-8') + json_bytes
+
+        self.wfile.write(response)
 
 
 def command_server(port):

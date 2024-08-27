@@ -36,6 +36,8 @@ import os
 import sys
 
 
+
+
 STATUS_PORT = 6510 # receive JSON status from Launchpad
 
 OSC_PORT = 6511 # transmit on this - a random number. there is no OSC port because OSC is not a protocol
@@ -86,24 +88,49 @@ class Mode(ABC):
 # and what address we heard from it on. Will be updated by the 
 # listener
 
+# (note the type has to be defined as a string (py3.7) in order to avoid a circular reference)
+
+
+
 # if we don't receive data in 3 seconds, its dead
 FLAMATIK_TIMEOUT = 3.0
 
 class FlamatikStatus():
-    def __init__(self):
+    def __init__(self, lpm: 'LaunchpadMiniMk2'):
         self.nozzles = 30
+        self.lpm = lpm
         self.reset()
 
     def reset(self) -> None:
+        print(f'setting status address to null string')
         self.address = ""
         self.last_received = 0.0
         self.uptime = 0.0
+        self.timeout = FLAMATIK_TIMEOUT # if no data in 1 sec clear
 
         self.apertures = [0.0] * self.nozzles
         self.solenoids = [0] * self.nozzles
         self.gyro = [0.0] * 3
         self.gravity = [0.0] * 3
         self.position = [0.0] * 3       
+
+    def light_status_leds(self):
+        if self.last_received == 0.0:
+            return
+        red = self.colors['red']
+        black = self.colors['black']
+        for i in range(self.nozzles):
+            if self.solenoids[i]:
+                color = red
+            else:
+                color = black
+            lpm.button_color_set('pad',int(i/8), i%8, color)
+
+
+    def clear_status_leds(self):
+        for i in range(self.nozzles):
+            lpm.button_color_set('pad',int(i/8), i%8, 0)
+
 
     def set(self, address: str,data) -> None:
         #for k, v in data.items():
@@ -467,7 +494,8 @@ class OSCTransmitter:
             self.nozzles[i] = val
 
 
-# background 
+# background for OSC transmitter.
+# on a thread
 
 def xmit_thread(xmit):
     while True:
@@ -486,8 +514,6 @@ def xmit_thread_init(xmit):
 # Modes
 # Use the abstract base class to create an interface, create three different modes
 #
-
-
 
 class LatchMode(Mode):
 
@@ -578,27 +604,97 @@ class MomentaryMode(Mode):
             self.osc_xmit.nozzles[n] = False
         return
 
+#
+# pattern mode has a list of patterns assigned to buttons
+# In init read the JSON file with list of pattern names to buttons
+# When you get a button event, send a request to FLamatik
+
 class PatternMode(Mode):
-    def __init__(self, lpm: LaunchpadMiniMk2):
+    def __init__(self, lpm: LaunchpadMiniMk2, status: FlamatikStatus):
         self.lpm = lpm
+        self.status = status
+        self.row = -1
+        self.column = -1
+
+        pattern_json_f = "pattern_mode.cnf"
+        if not os.path.exists(pattern_json_f):
+            raise FileNotFoundError(f' pattern config file {pattern_json_f} not found exiting')
+        try:
+            with open("pattern_mode.cnf") as pm_f:
+                self.patterns = json.load(pm_f)
+            for pattern in self.patterns:
+                # print(f'validating pattern {pattern["pattern"]} row {pattern["row"]} column {pattern["column"]}')
+                if 'row' not in pattern:
+                    raise KeyError(f'Missing required key row in pattern json config file : {pattern}')
+                if pattern['row'] >= 8:
+                    raise KeyError(f'Row must be less than 8 : {row} {pattern}')
+                if 'column' not in pattern:
+                    raise KeyError(f'Missing required key column in pattern json config file : {pattern}')
+                if pattern['column'] >= 8:
+                    raise KeyError(f'column must be less than 8 : {column} {pattern}')
+                if 'pattern' not in pattern:
+                    raise KeyError(f'Missing required key pattern in pattern json config file : {pattern}')
+
+        except json.JSONDecodeError as e:
+            raise json.JSONDecodeError(f' Failed to load pattern config file {pattern_json_f} : {e.msg} ',e.doc,e.pos)
+
 
     def buttonEvent(self, be: ButtonEvent) -> None:
-        print(f'Pattern Mode: button event {be}')
+
+        # print(f'Pattern Mode: button event type {be.type} action {be.action} row {be.row} column {be.column}')
+
+        if self.status.address == "":
+            print(f'pattern mode button but no current flamatik, ignoring')
+            return
+
+        if be.action != 'down' or be.type != 'pad':
+            # print(f' dont care about this kind of event')
+            return
+
+        pattern = ""
+        for p in self.patterns:
+            if (be.row == p['row']) and (be.column == p['column']):
+                pattern = p['pattern']
+                break
+            # else:
+                # print(f' wrong pattern at {p["row"]} , {p["column"]}')
+
+        # if there's no pattern registered here do nothing
+        if pattern == "":
+            # print(f'no pattern registered at {be.row} and {be.column}')
+            return
+
+        # unlight the old button
+        if self.row >= 0:
+                    # print(f' latch second press pad turning off {be.row}, {be.column}')
+            self.lpm.button_color_set('pad', self.row, self.column, self.lpm.colors['off']) # black turn off
+
+        self.row = be.row
+        self.column = be.column
+
+
+        # light the new one
+        self.lpm.button_color_set('pad', be.row, be.column, self.lpm.colors['red']) # red
+
+        # send the command to flamatik
+        print(f'changing pattern on Flamatik to {pattern}')
+
+
 
     def drawPad(self) -> None:
         return
 
     def clear(self) -> None:
+        # not necessary because gets cleared by default, nothing extra to do?
+        self.row = -1
+        self.column = -1
         return
 
 #
 #
-# Thread for reading broadcasted status from Flamatik
+# Thread for reading broadcasted status from Flamatik on a UDP packet
 # It's both interesting and lets us know where to send commands (directed)
 #
-
-
-# background 
 
 class StatusReceiver():
     def __init__(self):
@@ -615,7 +711,7 @@ class StatusReceiver():
             print(f' bad status data parse addr: {addr[0]} data {parsed_data}')
             return
 
-        print(f' received uptime {parsed_data["uptime"]} from device {parsed_data["device"]} address {addr[0]}')
+       # print(f' received uptime {parsed_data["uptime"]} from device {parsed_data["device"]} address {addr[0]}')
        #  print(f' apertures: {parsed_data["apertures"]}')
 
         flam.set(addr, parsed_data)
@@ -650,7 +746,8 @@ def main():
 
     args = args_init()
 
-    # get the launchpad and init
+    # get the launchpad and init. Exit if not found so the service can auto
+    # restart and try again
 
     launchpad = LaunchpadMiniMk2()
     if not launchpad.connect():
@@ -658,23 +755,24 @@ def main():
         return
 
     # create a flamatik status object
-    flam = FlamatikStatus()
+    flam = FlamatikStatus(launchpad)
+
+    # create a status receiver, fill fill up flam
+    status_recv = StatusReceiver()
+    status_receiver_init(status_recv, flam)
 
     # create an OSC transmitter
     osc_xmit = OSCTransmitter(args)
     xmit_thread_init(osc_xmit)
 
-    # create a status receiver
-    status_recv = StatusReceiver()
-    status_receiver_init(status_recv, flam)
-
     # create the modes and register them
     launchpad.mode_register( MomentaryMode(launchpad, osc_xmit), 0)
     launchpad.mode_register( LatchMode(launchpad, osc_xmit ), 1)
-    launchpad.mode_register( PatternMode(launchpad), 2)
+    launchpad.mode_register( PatternMode(launchpad, flam), 2)
     launchpad.mode_set(0)
 
-    # read the launchpad repeatedly. 
+    # this is basically our event loop. Read from the device. Better if it
+    # was non blocking I usppose
     try:
         while True:
             launchpad.read()
