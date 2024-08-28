@@ -42,7 +42,6 @@ STATUS_PORT = 6510 # receive JSON status from Launchpad
 
 OSC_PORT = 6511 # transmit on this - a random number. there is no OSC port because OSC is not a protocol
 
-
 LAUNCHPAD_STR1 = 'Launchpad Mini'
 LAUNCHPAD_STR2 = 'Novation USB'
 
@@ -76,11 +75,6 @@ class Mode(ABC):
     def buttonEvent(self, be: ButtonEvent) -> None:
         pass
 
-    @abstractmethod
-    # draw the entire state of the launchpad
-    def drawPad(self) -> None:
-        pass
-
     def clear(self) -> None:
         pass
 
@@ -98,12 +92,14 @@ FLAMATIK_TIMEOUT = 3.0
 class FlamatikStatus():
     def __init__(self, lpm: 'LaunchpadMiniMk2'):
         self.nozzles = 30
+        self.status_row = 4
         self.lpm = lpm
         self.reset()
 
     def reset(self) -> None:
         print(f'setting status address to null string')
         self.address = ""
+        self.command_port = 0
         self.last_received = 0.0
         self.uptime = 0.0
         self.timeout = FLAMATIK_TIMEOUT # if no data in 1 sec clear
@@ -114,33 +110,39 @@ class FlamatikStatus():
         self.gravity = [0.0] * 3
         self.position = [0.0] * 3       
 
+        self.clear_status_leds()
+
+    # if you get a status, set the values on the rows starting at the default
+    # to the current state
     def light_status_leds(self):
+        # print(f' lighting status led')
         if self.last_received == 0.0:
             return
-        red = self.colors['red']
-        black = self.colors['black']
+        red = self.lpm.colors['yellow']
+        black = self.lpm.colors['black']
         for i in range(self.nozzles):
             if self.solenoids[i]:
                 color = red
             else:
                 color = black
-            lpm.button_color_set('pad',int(i/8), i%8, color)
+            self.lpm.button_color_set('pad',int(i/8)+self.status_row, i%8, color)
 
 
     def clear_status_leds(self):
         for i in range(self.nozzles):
-            lpm.button_color_set('pad',int(i/8), i%8, 0)
+            self.lpm.button_color_set('pad',int(i/8) + self.status_row, i%8, 0)
 
 
     def set(self, address: str,data) -> None:
         #for k, v in data.items():
         #    print(f' recevied flamatik status: {k} , {v}') 
         self.last_received = time()
-        self.address = address
+        self.address = address[0]
         try:
             if data["device"] != 'lightcurve':
                 print(f' device not a lightcurves')
                 return
+            self.command_port = data.get("command_port",0)
             self.uptime = data.get("uptime",0.0)
             self.apertures = data["apertures"] if "apertures" in data else self.apertures
             self.solenoids = data["solenoids"] if "solenoids" in data else self.solenoids
@@ -151,6 +153,10 @@ class FlamatikStatus():
         except:
             print(f' received a status packet but missing a device specifier')
 
+        try:
+            self.light_status_leds()
+        except:
+            pass
 
     def isAlive(self) -> bool:
         if self.last_received == 0.0:
@@ -549,9 +555,6 @@ class LatchMode(Mode):
                 self.osc_xmit.nozzles[n] = False
 
 
-    def drawPad(self) -> None:
-        return
-
     def clear(self) -> None:
         self.pad_states = [[-1] * 8 for _ in range(8)]
         for r in range(8):
@@ -591,8 +594,6 @@ class MomentaryMode(Mode):
             else:
                 print(f' momentary received unknonw action type {be.action} ignoring')
 
-    def drawPad(self) -> None:
-        return
 
     def clear(self) -> None:
         # this shouldn't be necessary because when you press to move modes you shouldn't have
@@ -647,48 +648,114 @@ class PatternMode(Mode):
             print(f'pattern mode button but no current flamatik, ignoring')
             return
 
-        if be.action != 'down' or be.type != 'pad':
+        if be.action != 'down':
             # print(f' dont care about this kind of event')
             return
 
-        pattern = ""
-        for p in self.patterns:
-            if (be.row == p['row']) and (be.column == p['column']):
-                pattern = p['pattern']
-                break
-            # else:
-                # print(f' wrong pattern at {p["row"]} , {p["column"]}')
+        print(f' button action: {be.action}')
 
-        # if there's no pattern registered here do nothing
-        if pattern == "":
-            # print(f'no pattern registered at {be.row} and {be.column}')
-            return
+        if be.type == 'pad':
 
-        # unlight the old button
-        if self.row >= 0:
-                    # print(f' latch second press pad turning off {be.row}, {be.column}')
-            self.lpm.button_color_set('pad', self.row, self.column, self.lpm.colors['off']) # black turn off
+            pattern_o = {}
+            for p in self.patterns:
+                if (be.row == p['row']) and (be.column == p['column']):
+                    pattern_o = p
+                    break
+                # else:
+                    # print(f' wrong pattern at {p["row"]} , {p["column"]}')
 
-        self.row = be.row
-        self.column = be.column
+            # if there's no pattern registered here do nothing
+            if len(pattern_o) == 0:
+                # print(f'no pattern registered at {be.row} and {be.column}')
+                return
+
+            # unlight the old button
+            if self.row >= 0:
+                        # print(f' latch second press pad turning off {be.row}, {be.column}')
+                self.lpm.button_color_set('pad', self.row, self.column, self.lpm.colors['off']) # black turn off
+
+            self.row = be.row
+            self.column = be.column
 
 
-        # light the new one
-        self.lpm.button_color_set('pad', be.row, be.column, self.lpm.colors['red']) # red
+            # light the new one
+            self.lpm.button_color_set('pad', be.row, be.column, self.lpm.colors['red']) # red
 
-        # send the command to flamatik
-        print(f'changing pattern on Flamatik to {pattern}')
+            # send the command to flamatik
+            print(f'changing pattern on Flamatik to {pattern_o['pattern']}')
+            self.patternChange(pattern_o)
 
+        elif be.type == 'function':
+            print(f'button action')
+            if be.row == 0:
+                print(f' reset! ')
+                self.patternReset()
+                if self.row >= 0:
+                    self.lpm.button_color_set('pad', self.row, self.column, self.lpm.colors['off']) # black turn off
 
 
     def drawPad(self) -> None:
         return
 
     def clear(self) -> None:
-        # not necessary because gets cleared by default, nothing extra to do?
+        if self.row >= 0:
+            self.lpm.button_color_set('pad', self.row, self.column, self.lpm.colors['off']) # black turn offs
         self.row = -1
         self.column = -1
         return
+
+    # doing this cheap and just blocking. Hopefully it's OK? I could also spawn this into a different
+    # thread and it'll go away when it's done
+    def patternChange(self, pattern_o):
+
+        address = self.status.address
+        port = self.status.command_port
+        uri = f'http://{address}:{port}/flamatik'
+        msg = {}
+        for k,v in pattern_o.items():
+            if k in ['row', 'column']:
+                pass
+            elif k == 'pattern':
+                msg['name'] = v
+            else:
+                msg[k] = v
+        msg['command'] = 'setPattern'
+        if 'repeat' not in msg:
+            msg['repeat'] = 999999
+
+        print('pattern change: uri ',uri)
+
+        try:
+            response = requests.post(uri, json=msg, timeout=0.020)
+            if response.status_code == 200:
+                print(f'success: sent {pattern_o} to launchpad at {address}')
+            else:
+                print(f'fail: response code {response.status_code} from request to launchpad at {address}')
+        except requests.exceptions.Timeout:
+            print('fail: the request timed out')
+        except requests.exceptions.RequestException as e:
+            print('fail: error occurred', e)
+
+    def patternReset(self):
+        address = self.status.address
+        port = self.status.command_port
+        uri = f'http://{address}:{port}/flamatik'
+        msg = {'command': 'resetPattern'}
+
+        print('pattern reset: uri ',uri)
+
+        try:
+            response = requests.post(uri, json=msg, timeout=0.020)
+            if response.status_code == 200:
+                print(f'success: sent patternReset to launchpad at {address}')
+            else:
+                print(f'fail: response code {response.status_code} from request to launchpad at {address}')
+        except requests.exceptions.Timeout:
+            print('fail: the request timed out')
+        except requests.exceptions.RequestException as e:
+            print('fail: error occurred', e)
+
+
 
 #
 #

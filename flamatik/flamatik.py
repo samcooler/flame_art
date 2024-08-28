@@ -44,7 +44,8 @@ import socket
 from time import sleep, time
 import argparse
 import json
-from multiprocessing import Process, Event, Manager
+from multiprocessing import Process, Event, Manager, Queue
+import queue
 from types import SimpleNamespace
 import asyncio
 import math
@@ -60,14 +61,14 @@ import netifaces
 # importlib is necessary for the strange plugin system
 import importlib
 #
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
 import glob 
 import os
 import sys
 
-from typing import List, Any
+from typing import Dict, List, Any
 
 import logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -76,7 +77,7 @@ STATUS_PORT = 6510
 
 OSC_PORT = 6511 # a random number. there is no OSC port because OSC is not a protocol
 
-HTTP_PORT = 6509
+COMMAND_PORT = 6509
 
 ARTNET_PORT = 6454
 ARTNET_UNIVERSE = 0
@@ -181,6 +182,7 @@ class LightCurveState:
 
         # The arguments structure is a convenient way to get information to patterns.
         self.args = args
+        self.command_queue = Queue() # multiprocessing queue
 
         # validate the solenoid and aperture maps, make sure every nozzle is mapped
         solenoid_map = [-1] * self.nozzles
@@ -474,6 +476,7 @@ class LightCurveStatusXmit:
         data = {
             "device": "lightcurve",
             "version": "1.0",
+            "command_port": int(COMMAND_PORT),
             "uptime": round(time() - self.start_time,3), # don't take up too much bandwidth
             "solenoids": self.state.s.solenoids[:], # take a copy for transmission
             "apertures": [round(item,3) for item in self.state.s.apertures[:]],
@@ -483,6 +486,13 @@ class LightCurveStatusXmit:
             "seq": self.sequence # allows estimation of packet loss
         }
         self.sequence += 1
+
+        # bad form. Should abstract out this instead of replicating it.
+        if not self.state.args.nobuttons:
+            for n in range(self.state.args.nozzles):
+                if ((self.state.s.nozzle_buttons[n]) or (self.state.s.nozzle_buttons_1[n])):
+                    data['solenoids'][n] = True
+
 
         # the separators command greatly decreases the size by removing unnecessary spaces
         # slightly better code would also round the values in floating point to only 2 figures,
@@ -723,62 +733,84 @@ def osc_server_init(state: LightCurveState, args):
 # There are commands we wish to receive over reliable HTTP instead of continually broadcast over UDP
 # with OSC, like changing a pattern. This HTTP listener allows that.
 #
-#
+# I'm just tossing in some HTTP and JSON. There are too many options, so I'm going
+# with the endpoint 'flamatik', and all the rest of the data in the json.
+
+class CommandHTTPServer(HTTPServer):
+    def __init__(self, server_address, RequestHandlerClass, state: LightCurveState):
+        print(f'CommandHTTPServer: server address {server_address}')
+        super().__init__(server_address, RequestHandlerClass)
+        self.lc_state = state
 
 class CommandHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
+        # print(f' post receved from {self.path} ')
+        parsed_url = urlparse(self.path)
+        # print(f' received post to path {parsed_url.path}')
+        if parsed_url.path != '/flamatik':
+            print(f' recevied command for incorrect endpoint')
+            self.send_error(400, "wrong path")
+            return
+
         content_length = int(self.headers['Content-length'])
         post_data = self.rfile.read(content_length)
 
+        status = 400 # bad request
+
         try:
-            data = jsons.loads(post_data.decode('utf-8'))
+            data = json.loads(post_data.decode('utf-8'))
             print(f' received json command at {self.path} :: {data}')
 
+            self.server.lc_state.command_queue.put(data)
+            status = 200
+
+            # would be nice to return a status but then that would be synchronous.
+            # could probably have a validate....
+
             # build a response put it in json_response
-            json_response = ""
+            #json_response = ""
+            #json_bytes = json.dumps(json_response).encode('utf-8')
+            #response = ( f"HTTP/1.1 {status} OK\r\n"
+            #            "Content-type: application/json\r\n"
+            #            f'Content-length: {len(json_bytes)}\r\n\r\n'
+            #            ).encode('utf-8') + json_bytes
 
-            json_bytes = json.dumps(json_response).encode('utf-8')
-
-            response = ( "HTTP/1.1 200 OK\r\n"
+            response = ( f"HTTP/1.1 {status} OK\r\n"
                         "Content-type: application/json\r\n"
-                        f'Content-length: {len(json_bytes)}\r\n'
-                        "\r\n"
-                        ).encode('utf-8') + json_bytes
+                        f'Content-length: 0\r\n\r\n'
+                    ).encode('utf-8')
+
 
             self.wfile.write(response)
 
         except json.JSONDecodeError:
             print('Data is not JSON')
-            self.send_response(200)
-            self.end_headers()
+            self.send_error(400, "bad content object") # bad request
+            return
 
     def do_GET(self):
-        print(f' received get URI {self.path}')
+        print(f' received get URI {self.path} which we dont support')
+        # parsed_url = urlparse(self.path)
 
-        # put the response in json_response
-        json_response = ""
-
-        json_bytes = json.dumps(json_response).encode('utf-8')
-
-        response = ( "HTTP/1.1 200 OK\r\n"
-                    "Content-type: application/json\r\n"
-                    f'Content-length: {len(json_bytes)}\r\n'
-                    "\r\n"
-                    ).encode('utf-8') + json_bytes
+        status = 404
+        response = ( f"HTTP/1.1 {status} OK\r\n\r\n").encode('ascii') + json_bytes
 
         self.wfile.write(response)
 
 
-def command_server(port):
+def command_server(port:int, state: LightCurveState):
+    print(f'command server process: port {port}')
     try:
-        httpd = HTTPServer(('', port), CommandHandler)
+        httpd = CommandHTTPServer(('', port), CommandHandler, state)
         httpd.serve_forever()
     except KeyboardInterrupt:
         pass
+    print(f' command server terminating')
 
-def command_server_init(port=HTTP_PORT):
-    command_process = Process(target=command_server, args=(port,))
+def command_server_init(port: int, state: LightCurveState):
+    print(f'command server init: port {port}')
+    command_process = Process(target=command_server, args=(port,state))
     command_process.daemon = True
     command_process.start()
 
@@ -846,18 +878,33 @@ def import_patterns():
 def patterns():
     return ' '.join(PATTERN_FUNCTIONS.keys())
 
-def pattern_execute(pattern: str, state) -> bool:
+PATTERN_PARAMETERS = [ "nozzle", "delay", "group" ]
 
-    if pattern in PATTERN_FUNCTIONS:
-        return PATTERN_FUNCTIONS[pattern](state)
-    else:
-        return False
+# object 
+def pattern_execute(pattern_o: Dict, state) -> Process:
 
-    return True
+    print(f'pattern execute: {pattern_o}')
+
+    pattern_name = pattern_o['name']
+    if pattern_name not in PATTERN_FUNCTIONS:
+        return None 
+
+    # overwrite the values in args with pattern properties
+    # later todo: change all patterns to look at the pattern_object
+    for param in PATTERN_PARAMETERS:
+        if param in pattern_o:
+            print(f'Found {param} replacing with {pattern_o[param]}')
+            setattr(state.args, param, pattern_o[param])
+        else:
+            setattr(state.args, param, None)
+
+    pattern_process = Process(target=PATTERN_FUNCTIONS[pattern_name], args=(state,) )
+    return pattern_process
 
 
 def pattern_insert(pattern_name: str, pattern_fn):
     PATTERN_FUNCTIONS[pattern_name] = pattern_fn
+
 
 
 def pattern_multipattern(state: LightCurveState):
@@ -885,50 +932,142 @@ def pattern_multipattern(state: LightCurveState):
 #    ]
 
 # these will be copied to the pattern if they exist
+# return the playlist of the default
+def flamatik_playlist_reset(args):
 
-PATTERN_PARAMETERS = [ "nozzle", "delay", "group" ]
+    playlist = None
 
+    if args.list != "":
 
-def execute_list(args, state: LightCurveState):
+        print(' execute: have a playlist file load it')
 
-    # load config file
-    with open(args.list) as playlist_f:
-        playlist = json.load(playlist_f)  # XXX catch exceptions here.
+        # load config file
+        with open(args.list) as playlist_f:
+            playlist = json.load(playlist_f)  # XXX catch exceptions here.
 
-    # validate file
+        # validate file
+        for idx, p in enumerate(playlist):
+            if 'name' not in p:
+                print(f'playlist: entry {idx} has no name, exiting ')
+                return None
+            if p["name"] not in PATTERN_FUNCTIONS:
+                print(f'playlist: entry {idx} name {p["name"]} is not a valid pattern name, exiting')
+                return None
+            if 'duration' not in p:
+                print(f'playlist: entry {idx} name {p["name"]} has no duration, exiting ')
+                return None
 
-    for idx, p in enumerate(playlist):
-        if 'name' not in p:
-            print(f'playlist: entry {idx} has no name, exiting ')
-            return
-        if p["name"] not in PATTERN_FUNCTIONS:
-            print(f'playlist: entry {idx} name {p["name"]} is not a valid pattern name, exiting')
-            return
-        if 'duration' not in p:
-            print(f'playlist: entry {idx} name {p["name"]} has no duration, exiting ')
-            return
-
-    for p in playlist:
-        # replace the parameters if available
+    # if the args list wasn't null
+    else:
+        # cons a playlist out of the current arguments
+        print(f' a pattern on the command line make a single item playlist')
+        p = {
+            'name': args.pattern,
+            'repeat': args.repeat,
+        }
+        # TODO: this is wrong after the first time, but we'll fix this when
+        # we stop the hack of using args to pass parameters to functions
         for param in PATTERN_PARAMETERS:
-            if param in p:
-                print(f'Found {param} in {p["name"]} replacing with {p[param]}')
-                setattr(state.args, param, p[param])
+            if hasattr(args,param): # note: since args is a namespace, you can't use in
+                print(f'Found {param} in args copying to default execution')
+                p['param'] = getattr(args,param)
             else:
-                setattr(state.args, param, None)
- 
+                p['param'] = None
+        playlist = (p,)
 
-        print(f' starting pattern {p["name"]} for {p["duration"]} seconds')
+    return playlist
 
-        pattern_process = Process(target=PATTERN_FUNCTIONS[p["name"]], args=(state,) )
-        pattern_process.start()
-        pattern_process.join(timeout=p["duration"])
-        if pattern_process.is_alive():
+
+
+
+# now there's an execute list. It could start out with
+# a pattern, or a playlist, but it listens on the command queue and switches patterns
+# if requested
+# create a dict with 'name' for the pattern, duration, and other parameters, it will be executed
+
+def flamatik_execute(args, state: LightCurveState):
+
+    playlist = ()
+    playlist_index = 0
+    pattern_process = None
+
+    print('flamatik execute')
+
+    playlist = flamatik_playlist_reset(args)
+
+    # execute whichever is p next
+    while True:
+
+        # if the pattern has terminated, clean the variable to allow the next to execute
+        if pattern_process is not None and pattern_process.is_alive() is False:
+            pattern_process = None
+
+        # launch a new pattern if we're not running one
+        if pattern_process is None:
+
+            p = playlist[playlist_index % len(playlist)]
+            playlist_index += 1
+
+            print(f' command: starting pattern {p["name"]}')
+            if p["name"] not in PATTERN_FUNCTIONS:
+                # todo: find a better thing to do than this
+                print(" ERROR received pattern that does not exist")
+                continue
+
+            pattern_process = pattern_execute(p, state)
+            pattern_start = time()
+            if 'duration' in p:
+                pattern_end = time() + p["duration"]
+            else:
+                pattern_end = 0.0
+
+            pattern_process.start()
+
+        # check the command queue, do something if we can
+        try:
+            msg = state.command_queue.get_nowait()
+            print(f' receieved command in execute: {msg}')
+            cmd = msg['command']
+            if cmd == 'setPattern':
+                print(f' set pattern received, changing pattern to {msg["name"]}')
+
+                # check that pattern exists
+
+                # replace the playlist with this
+                playlist = (msg,)
+
+                # terminate what is running
+                if pattern_process.is_alive():
+                    pattern_process.terminate()
+                    pattern_process.join()
+                    pattern_process = None
+                    pattern_end = 0.0
+
+            elif cmd == 'resetPattern':
+
+                print(f' reset pattern received, resetting to original pattern or playlist')
+
+                playlist = flamatik_playlist_reset(args)
+
+                # terminate what is running
+                if pattern_process.is_alive():
+                    pattern_process.terminate()
+                    pattern_process.join()
+                    pattern_process = None
+                    pattern_end = 0.0
+
+        except queue.Empty:
+            pass
+
+        # check the duration, kill if out of time
+        if pattern_end > 0.0 and pattern_end < time():
+            print(f' Ending pattern {p["name"]} end was {pattern_end}')
             pattern_process.terminate()
-            sleep(0.1)
+            pattern_process.join()
+            pattern_process = None 
+            pattern_end = 0.0
 
-        print(f' starting finished pattern {p["name"]}')
-
+        sleep(0.01)
 
 #
 #
@@ -975,7 +1114,7 @@ def main():
     global debug
     debug = args.debug
 
-    if (args.list != "") and (args.pattern not in PATTERN_FUNCTIONS):
+    if (args.list == "") and (args.pattern not in PATTERN_FUNCTIONS):
         print(f' pattern must be one of {patterns()}')
         return
 
@@ -999,20 +1138,10 @@ def main():
         osc_server_init(state, args)
 
         # creates an HTTP listener which can receive JSON or OSC commands like change pattern
-        command_server_init()
-
+        command_server_init(COMMAND_PORT, state)
 
         try:
-
-            # if there's a playlist (list) play it, otherwise, play the pattern
-            if (args.list != ""):
-                execute_list(args, state)
-
-            else:
-
-                # run it bro
-                    for _ in range(args.repeat):
-                        pattern_execute(args.pattern, state)
+            flamatik_execute(args,state)
 
         except KeyboardInterrupt: # be silent in this case
             pass
