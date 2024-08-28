@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # Author: Brian Bulkowski brian@bulkowski.org
 #
@@ -13,31 +13,161 @@
 # 
 
 
-
 from time import sleep, time
 import argparse
 from typing import Tuple
 from threading import Thread, Event, Lock
+from abc import ABC, abstractmethod
 import math
+
 import logging
+import json
 
 import rtmidi
 
 from osc4py3.as_eventloop import *
 from osc4py3 import oscbuildparse, oscchannel, oscmethod as osm
 
+import requests
+import socket
 import netifaces
 
 import os
 import sys
 
+
+
+
+STATUS_PORT = 6510 # receive JSON status from Launchpad
+
+OSC_PORT = 6511 # transmit on this - a random number. there is no OSC port because OSC is not a protocol
+
 LAUNCHPAD_STR1 = 'Launchpad Mini'
 LAUNCHPAD_STR2 = 'Novation USB'
+
+#
+# type = 'mode', 'pad', 'function' (mode is along the top, function is the side)
+# action = 'up' 'down'
+# row, column is integer 0 to 8
+# for 'mode' (along the top) column is which row is 0, for 'function' row is filled, column is 0
+class ButtonEvent():
+    def __init__(self, type: str, action: str, row: int = 0, column: int = 0 ):
+        if type not in ['mode', 'pad', 'function']:
+            raise ValueError(f'Cant create ButtonEvent with bad type {type}')
+        if action not in ['up', 'down']:
+            raise ValueError(f'Cant create ButtonEvent with bad action {action} ')
+        if row < 0 or row >= 8:
+            raise ValueError(f'Cant create ButtonEvent bad row value {row}')
+        if column < 0 or column >= 8:
+            raise ValueError(f'')
+
+        self.type = type
+        self.action = action
+        self.row = row
+        self.column = column
+
+
+# this is an abstract interface
+
+class Mode(ABC):
+    @abstractmethod
+    # receive a button event
+    def buttonEvent(self, be: ButtonEvent) -> None:
+        pass
+
+    def clear(self) -> None:
+        pass
+
+# this will have the last time we heard from the flamatik
+# and what address we heard from it on. Will be updated by the 
+# listener
+
+# (note the type has to be defined as a string (py3.7) in order to avoid a circular reference)
+
+
+
+# if we don't receive data in 3 seconds, its dead
+FLAMATIK_TIMEOUT = 3.0
+
+class FlamatikStatus():
+    def __init__(self, lpm: 'LaunchpadMiniMk2'):
+        self.nozzles = 30
+        self.status_row = 4
+        self.lpm = lpm
+        self.reset()
+
+    def reset(self) -> None:
+        print(f'setting status address to null string')
+        self.address = ""
+        self.command_port = 0
+        self.last_received = 0.0
+        self.uptime = 0.0
+        self.timeout = FLAMATIK_TIMEOUT # if no data in 1 sec clear
+
+        self.apertures = [0.0] * self.nozzles
+        self.solenoids = [0] * self.nozzles
+        self.gyro = [0.0] * 3
+        self.gravity = [0.0] * 3
+        self.position = [0.0] * 3       
+
+        self.clear_status_leds()
+
+    # if you get a status, set the values on the rows starting at the default
+    # to the current state
+    def light_status_leds(self):
+        # print(f' lighting status led')
+        if self.last_received == 0.0:
+            return
+        red = self.lpm.colors['yellow']
+        black = self.lpm.colors['black']
+        for i in range(self.nozzles):
+            if self.solenoids[i]:
+                color = red
+            else:
+                color = black
+            self.lpm.button_color_set('pad',int(i/8)+self.status_row, i%8, color)
+
+
+    def clear_status_leds(self):
+        for i in range(self.nozzles):
+            self.lpm.button_color_set('pad',int(i/8) + self.status_row, i%8, 0)
+
+
+    def set(self, address: str,data) -> None:
+        #for k, v in data.items():
+        #    print(f' recevied flamatik status: {k} , {v}') 
+        self.last_received = time()
+        self.address = address[0]
+        try:
+            if data["device"] != 'lightcurve':
+                print(f' device not a lightcurves')
+                return
+            self.command_port = data.get("command_port",0)
+            self.uptime = data.get("uptime",0.0)
+            self.apertures = data["apertures"] if "apertures" in data else self.apertures
+            self.solenoids = data["solenoids"] if "solenoids" in data else self.solenoids
+            self.gyro = data["gyro"] if "gyro" in data else self.gyro
+            self.rotation = data["rotation"] if "rotation" in data else self.rotation
+            self.gravity = data["gravity"] if "gravity" in data else self.gravity
+
+        except:
+            print(f' received a status packet but missing a device specifier')
+
+        try:
+            self.light_status_leds()
+        except:
+            pass
+
+    def isAlive(self) -> bool:
+        if self.last_received == 0.0:
+            return
+        if time() > self.last_received + FLAMATIK_TIMEOUT:
+            self.reset()
 
 
 class LaunchpadMiniMk2():
 
-    def __init__(self, mode_handler, function_handler, pad_handler) -> None:
+    def __init__(self) -> None:
 
         # Initialize the MIDI output and input
         self.midi_out = rtmidi.MidiOut()
@@ -46,10 +176,6 @@ class LaunchpadMiniMk2():
         # Find the Launchpad Mini Mk2
         self.launchpad_in_port = None
         self.launchpad_out_port = None
-
-        self.mode_handler = mode_handler
-        self.function_handler = function_handler 
-        self.pad_handler = pad_handler
 
         for i, port in enumerate(self.midi_in.get_ports()):
             if LAUNCHPAD_STR1 in port:
@@ -73,16 +199,21 @@ class LaunchpadMiniMk2():
 
         self.colors = {
             "off": 0,
+            "black": 0,
             "red": 15,
             "blue": 47,
+            "green": 60,
             "teal": 33,
             "purple": 53,
-            "yellow": 62
+            "yellow": 127
         }
 
+        self.mode_setup()
 
+        self.keymap_setup()
 
-        self.setup_keymap()
+        self.mode = 0
+
 
     # mode handler: 'on' / 'off' , id [ 0 to 7 ]
     # function handler: 'on' / 'off' , id [ 0 to 7 ]
@@ -94,7 +225,7 @@ class LaunchpadMiniMk2():
         self.pad_handler = pad_handler
 
 
-    def setup_keymap(self):
+    def keymap_setup(self):
         # construct a map of buttons
         # the keys are 0, to 7, along the top row,
         # but then 16 through 17 along the next row
@@ -111,7 +242,6 @@ class LaunchpadMiniMk2():
         # let's put 0,0 in the upper left
         self.pads = [[-1] * 8 for _ in range(8)]
 
-        self.pad_states = [[-1] * 8 for _ in range(8)]
 
         noz = 0
         for row in range(0,8):
@@ -123,59 +253,116 @@ class LaunchpadMiniMk2():
                     return
                 noz += 1
 
+    ## SET COLOR FUNCTION
 
-    def clear_leds(self):
+    # row, column : 0,0 is upper left
+    def button_color_set(self, type:str, row:int, column:int, color:int):
+        if type == 'function':
+            self.midi_out.send_message([144, (row * 16) + 8, color]) 
+
+        elif type == 'pad':
+            self.midi_out.send_message([144, (row * 16) + column, color]) 
+
+        elif type == 'mode':
+            self.midi_out.send_message([176,column + 104, color])
+
+        else:
+            raise AttributeError(" setting a color to an incorrect type")
+
+    def buttons_clear(self):
         # there's actually not this number but its eaiser than getting the rows and columns correct
-        for note in range(0,121):
-            self.midi_out.send_message([144, note, 0])  # off
+        print(f' clear leds ')
+        off = self.colors['off']
+        for r in range(8):
+            for c in range(8):
+                self.button_color_set('pad',r,c,off)
+        for i in range(8):
+            self.button_color_set('function',i,0,off)
+            self.button_color_set('mode',0,i,off)
 
-        for cc in range(104,112):
-            self.midi_out.send_message([176, note, 0])  # off
 
     def connect(self) -> bool:
         if self.launchpad_in_port is None or self.launchpad_out_port is None:
             print("Launchpad Mini Mk2 not found.")
             return False
-        else:
-            print(f'Found Launchpad mini at input port {self.launchpad_in_port} output {self.launchpad_out_port}')
-            self.midi_out.open_port(self.launchpad_out_port)
-            self.midi_in.open_port(self.launchpad_in_port)
-            print(f"Connected to Launchpad")
-            return True
+
+        print(f'Found Launchpad mini at input port {self.launchpad_in_port} output {self.launchpad_out_port}')
+        self.midi_out.open_port(self.launchpad_out_port)
+        self.midi_in.open_port(self.launchpad_in_port)
+        print(f"Connected to Launchpad")
+
+        self.buttons_clear()
+
+        return True
 
     def disconnect(self):
         self.midi_out.close_port()
         self.midi_in.close_port()
+
+    def mode_setup(self):
+        # this is a dictionary comprehension
+        self.mode_handlers = {i: None for i in range(8)}
+
+    def mode_register(self, mode: Mode, index: int ):
+        if index >= 8:
+            raise AttributeError(f' mode register: index {index} out of range')
+        self.mode_handlers[index] = mode
+
+    # 0 index
+    def mode_set(self, index: int):
+        # check to see if there is a valid handler ignore if not
+        if self.mode_handlers[index] == None:
+            print(f' Mode {index} not supported or registered')
+            return
+
+        # clear the old button
+        if self.mode >= 0:
+            self.button_color_set('mode', 0, self.mode, self.colors['off'] )
+            # call the clear function on the old handler if there was one
+            if self.mode_handlers[self.mode] != None:
+                self.mode_handlers[self.mode].clear()
+        # set the new
+        self.mode = index
+        self.button_color_set('mode', row=0, column=self.mode, color=self.colors['red'])
+
+    # get the current mode object
+    def mode_get(self) -> Mode:
+        return self.mode_handlers[self.mode]
+
+
 
     # str is pad or function
     # if pad, x / y
     # if function, 0 to 7 (side buttons)
     # if error, 'unknown'
 
-    def categorize_note(self, note: int) -> Tuple[str, int, int] :
-        # print(f' categorize note: id {id}')
+    def categorize_note(self, note: int, velocity: int) -> ButtonEvent :
+        # print(f' categorize note: {note} velocity {velocity}')
+        action = 'up' if velocity == 0 else 'down'
+        # print(f' categorize note: action {action}')
+
         row = int(note / 16)
         column = note % 16
         t = 'pad'
-        if (column == 8):
-            t = 'function'
-        elif (column == 9):
-            t = 'unknown'
-        if row > 7:
-            t = 'unknown'
-        # print(f' caegorized as: type {t} row {row} column {column}')
-        return( t, row, column )
+        if column < 8:
+            return ButtonEvent('pad',action,row,column)
+        elif (column == 8):
+            return ButtonEvent('function',action,row,0)
+        else:
+            raise AttributeError(f'note {note} unexpected in categorize note')
 
 
     # cc is always mode (top)
     # -1 is unknown
-    def categorize_cc(self, note: int) -> Tuple[str, int]:
-        print(f' categorize cc: {note}')
+    # return is 0 for the first button (zero index)
+    def categorize_cc(self, note: int, velocity: int) -> ButtonEvent:
+        action = 'down' if velocity == 0 else 'up'
+        # print(f' categorize cc: {note}')
         if note >= 104 and note <= 111:
-            print(f'cc : mode : button {note - 104}')
-            return( 'mode', note - 104)
-        return('unknown', -1)
-
+            # print(f'cc : mode : button {note - 104}')
+            return ButtonEvent('mode', action, 0, note-104)
+        else:
+            raise AttributeError(f' cc {note} unexpected in categorize cc')
 
     def read(self):
         while True:
@@ -184,59 +371,26 @@ class LaunchpadMiniMk2():
                 data, _ = msg
                 status, note, velocity = data
 
-                if status == 144:  # Note on
+                if status == 144:  # Note event
 
-                    t, row, column = self.categorize_note(note)
-                    # print(f"Button type {t} row {row} column {column} (note {note},vel {velocity})")
+                    be = self.categorize_note(note, velocity)
+                    # print(f"Button type {be.type} row {be.row} column {be.column} (note {note},vel {velocity})")
 
-                    # first 4 rows of pads will be latching, rest will be momentary
-                    latching = False
-                    if row < 4:
-                        latching = True
-
-                    if velocity > 0:
-
-                        if t != 'pad':
-                            print(f' non-pad button ignored ')
-                            return
-
-                        if latching:
-
-                            if (self.pad_states[row][column] == 1):
-                                print(f' release pad {row}, {column}')
-                                self.pad_states[row][column] = 0
-                                self.midi_out.send_message([status, note, 0]) # black
-                                self.pad_handler('up', row, column)
-                            else:
-                                print(f' press pad {row} {column}')
-                                self.pad_states[row][column] = 1
-                                self.midi_out.send_message([status, note, 15]) # red
-                                self.pad_handler('down', row, column)
-
-                        else:
-
-                            self.pad_states[row][column] = 1
-                            self.midi_out.send_message([status, note, 60]) # green
-                            self.pad_handler('down', row, column)
-
+                    # pass to the mode handler
+                    mode = self.mode_get()
+                    if mode:
+                        mode.buttonEvent(be)
                     else:
-                        # latching buttons ignore note:up
-                        if latching == False:
-                            self.pad_states[row][column] = 0
-                            self.midi_out.send_message([status, note, 0]) # off
-                            self.pad_handler('up', row, column)
+                        print(f'no mode registered')
 
+                # MODE BUTTONS - along top
                 elif status == 176: # control change, which is the 
-                    self.categorize_cc(note)
-                    if velocity > 0: # keypress
-                        print(f"Button {note} pressed (velocity {velocity})")
-                        # Turn on the corresponding LED
-                        # Red = 0, green = 63, blue = 0, with values from 0 to 63 for brightes
-                        self.midi_out.send_message([status, note, 60])  # Green light
-                    else:
-                        print(f"Button {note} released")
-                        # Turn off the corresponding LED
-                        self.midi_out.send_message([status, note, 0])
+                    event = self.categorize_cc(note, velocity)
+                    if event.type != 'mode':
+                        return
+                    if event.action == 'down' : # keypress
+                        # print(f"Mode Button {event.column} pressed")
+                        self.mode_set(event.column)
 
                 else:
                     print(f'unknown message: status {status} note {note} velocity {velocity}')
@@ -250,7 +404,6 @@ class LaunchpadMiniMk2():
 # OSC Transmitter
 #
 
-OSC_PORT = 6511 # a random number. there is no OSC port because OSC is not a protocol
 
 def get_broadcast_addresses():
     interfaces = netifaces.interfaces()
@@ -281,8 +434,6 @@ class OSCTransmitter:
 
         # array of values for the nozzle buttons
         self.nozzles = [False] * NOZZLE_BUTTON_LEN
-        # array of values for program control buttons
-        self.controls = [False] * CONTROL_BUTTON_LEN
 
         self.debug = args.debug
         self.sequence = 0
@@ -321,29 +472,23 @@ class OSCTransmitter:
         # prealloc code in string that makes it non terrible
         # also: it seems unnecessary to send both the type string and the value, but OSCMessage validates, so this is required.
         # send fails silently if you don't do this
+        #
+        # There's a problem using the same OSC name. The Flamatik receiver gets two sets of states, would be flipping
+        # between them. Therefore, gonna use two different OSC names. Alternately, it would be better
+        # to track via source IP/PORT, but that's more complex, maybe. Might switch to that?
         nozzles_str = ','
         for v in self.nozzles:
             if v:
                 nozzles_str += 'T'
             else:
                 nozzles_str += 'F'
-        msg_nozzles = oscbuildparse.OSCMessage('/LC/nozzles', nozzles_str, self.nozzles)
-
-        controls_str = ','
-        for v in self.controls:
-            if v:
-                controls_str += 'T'
-            else:
-                controls_str += 'F'
-        msg_controls = oscbuildparse.OSCMessage('/LC/controls', controls_str, self.controls)
+        msg_nozzles = oscbuildparse.OSCMessage('/LC/nozzles/1', nozzles_str, self.nozzles)
 
         try:
 
             with osc_lock:
 
                 osc_send(msg_nozzles, 'client')
-                osc_process()
-                osc_send(msg_controls, 'client')
                 osc_process()
 
         except Exception as e:
@@ -354,12 +499,9 @@ class OSCTransmitter:
         for i in range(len(self.nozzles)):
             self.nozzles[i] = val
 
-    def fill_controls(self, val):
-        for i in range(len(self.nozzles)):
-            self.nozzles[i] = val
 
-
-# background 
+# background for OSC transmitter.
+# on a thread
 
 def xmit_thread(xmit):
     while True:
@@ -368,42 +510,289 @@ def xmit_thread(xmit):
         sleep(1.0 / 25.0)
 
 def xmit_thread_init(xmit):
-    global BACKGROUND_THREAD, xmit_event
-    BACKGROUND_THREAD = Thread(target=xmit_thread, args=(xmit,) )
-    BACKGROUND_THREAD.daemon = True
-    BACKGROUND_THREAD.start()
+    thread = Thread(target=xmit_thread, args=(xmit,) )
+    thread.daemon = True
+    thread.start()
+
+
 
 #
-# 
-
-# action is:
-# down, up 
+# Modes
+# Use the abstract base class to create an interface, create three different modes
 #
 
-def pad_action(action: str, row: int, column: int ):
-    # print(f' pad action {action} on row {row} column {column}')
-    global OSC_XMIT
+class LatchMode(Mode):
 
-    # convert row and column to nozzle number
-    n = row * 8 + column
-    if n >= NOZZLE_BUTTON_LEN:
-        print(f' nozzle button {row} {column} but only {NOZZLE_BUTTON_LEN}, ignoring')
+    def __init__(self, lpm: LaunchpadMiniMk2, osc_xmit: OSCTransmitter):
+        self.lpm = lpm
+
+        self.osc_xmit = osc_xmit
+
+        # -1 means uninit, 0 means off, 1 means on - for fire
+        self.pad_states = [[-1] * 8 for _ in range(8)]
+
+
+    def buttonEvent(self, be: ButtonEvent) -> None:
+        # print(f' Latch Mode received button event ')
+        if be.type == 'pad' and be.action == 'down' :
+
+            n = be.row * 8 + be.column
+            if n >= NOZZLE_BUTTON_LEN:
+                print(f' nozzle button {be.row} {be.column} but only {NOZZLE_BUTTON_LEN}, ignoring')
+                return
+
+            if (self.pad_states[be.row][be.column] <= 0):
+                # print(f' latch first press pad {be.row} {be.column}')
+                self.pad_states[be.row][be.column] = 1
+                self.lpm.button_color_set('pad', be.row, be.column, self.lpm.colors['red']) # red
+                self.osc_xmit.nozzles[n] = True
+
+            # already on
+            else:
+                # print(f' latch second press pad turning off {be.row}, {be.column}')
+                self.pad_states[be.row][be.column] = 0
+                self.lpm.button_color_set('pad', be.row, be.column, self.lpm.colors['off']) # black turn off
+                self.osc_xmit.nozzles[n] = False
+
+
+    def clear(self) -> None:
+        self.pad_states = [[-1] * 8 for _ in range(8)]
+        for r in range(8):
+            for c in range(8):
+                self.lpm.button_color_set('pad', r, c, self.lpm.colors['off']) # black turn off
+        for n in range(NOZZLE_BUTTON_LEN):
+            self.osc_xmit.nozzles[n] = False
         return
 
-    if action == 'down':
-        print(f' FIRE NOZZLE {n}')
-        OSC_XMIT.nozzles[n] = True
-    else:
-        print(f' UNFIRE NOZZLE {n}')
-        OSC_XMIT.nozzles[n] = False
+class MomentaryMode(Mode):
+    def __init__(self, lpm: LaunchpadMiniMk2, osc_xmit: OSCTransmitter):
+        self.lpm = lpm
+
+        self.osc_xmit = osc_xmit
+
+    def buttonEvent(self, be: ButtonEvent) -> None:
+        # print(f' Momentary Mode received button event {be.action} r {be.row} c {be.column}')
+
+        if be.type == 'pad' :
+
+            n = be.row * 8 + be.column
+            if n >= NOZZLE_BUTTON_LEN:
+                print(f' nozzle button {be.row} {be.column} but only {NOZZLE_BUTTON_LEN}, ignoring')
+                return
+
+            if be.action == 'down':
+                print(f'Momentary Mode: button down turnning on fire and setting button')
+                self.lpm.button_color_set('pad', be.row, be.column, self.lpm.colors['green']) # red
+                self.osc_xmit.nozzles[n] = True
+
+            elif be.action == 'up':
+                print(f'Momentary Mode: button up turnning off fire and clearing button')
+                self.lpm.button_color_set('pad', be.row, be.column, self.lpm.colors['off']) # off
+                self.osc_xmit.nozzles[n] = False
+
+            # already on
+            else:
+                print(f' momentary received unknonw action type {be.action} ignoring')
 
 
-def mode_action(action: str, b: int):
-    print(f' mode action {action} on button {b}, ignoring')
+    def clear(self) -> None:
+        # this shouldn't be necessary because when you press to move modes you shouldn't have
+        # a button down but it might happen
+        for r in range(8):
+            for c in range(8):
+                self.lpm.button_color_set('pad', r, c, self.lpm.colors['off']) # black turn off
+        for n in range(NOZZLE_BUTTON_LEN):
+            self.osc_xmit.nozzles[n] = False
+        return
+
+#
+# pattern mode has a list of patterns assigned to buttons
+# In init read the JSON file with list of pattern names to buttons
+# When you get a button event, send a request to FLamatik
+
+class PatternMode(Mode):
+    def __init__(self, lpm: LaunchpadMiniMk2, status: FlamatikStatus):
+        self.lpm = lpm
+        self.status = status
+        self.row = -1
+        self.column = -1
+
+        pattern_json_f = "pattern_mode.cnf"
+        if not os.path.exists(pattern_json_f):
+            raise FileNotFoundError(f' pattern config file {pattern_json_f} not found exiting')
+        try:
+            with open("pattern_mode.cnf") as pm_f:
+                self.patterns = json.load(pm_f)
+            for pattern in self.patterns:
+                # print(f'validating pattern {pattern["pattern"]} row {pattern["row"]} column {pattern["column"]}')
+                if 'row' not in pattern:
+                    raise KeyError(f'Missing required key row in pattern json config file : {pattern}')
+                if pattern['row'] >= 8:
+                    raise KeyError(f'Row must be less than 8 : {row} {pattern}')
+                if 'column' not in pattern:
+                    raise KeyError(f'Missing required key column in pattern json config file : {pattern}')
+                if pattern['column'] >= 8:
+                    raise KeyError(f'column must be less than 8 : {column} {pattern}')
+                if 'pattern' not in pattern:
+                    raise KeyError(f'Missing required key pattern in pattern json config file : {pattern}')
+
+        except json.JSONDecodeError as e:
+            raise json.JSONDecodeError(f' Failed to load pattern config file {pattern_json_f} : {e.msg} ',e.doc,e.pos)
 
 
-def function_action(action: str, b: int):
-    print(f' function action {action} on button {b} ignoring')
+    def buttonEvent(self, be: ButtonEvent) -> None:
+
+        # print(f'Pattern Mode: button event type {be.type} action {be.action} row {be.row} column {be.column}')
+
+        if self.status.address == "":
+            print(f'pattern mode button but no current flamatik, ignoring')
+            return
+
+        if be.action != 'down':
+            # print(f' dont care about this kind of event')
+            return
+
+        print(f' button action: {be.action}')
+
+        if be.type == 'pad':
+
+            pattern_o = {}
+            for p in self.patterns:
+                if (be.row == p['row']) and (be.column == p['column']):
+                    pattern_o = p
+                    break
+                # else:
+                    # print(f' wrong pattern at {p["row"]} , {p["column"]}')
+
+            # if there's no pattern registered here do nothing
+            if len(pattern_o) == 0:
+                # print(f'no pattern registered at {be.row} and {be.column}')
+                return
+
+            # unlight the old button
+            if self.row >= 0:
+                        # print(f' latch second press pad turning off {be.row}, {be.column}')
+                self.lpm.button_color_set('pad', self.row, self.column, self.lpm.colors['off']) # black turn off
+
+            self.row = be.row
+            self.column = be.column
+
+
+            # light the new one
+            self.lpm.button_color_set('pad', be.row, be.column, self.lpm.colors['red']) # red
+
+            # send the command to flamatik
+            print(f'changing pattern on Flamatik to {pattern_o['pattern']}')
+            self.patternChange(pattern_o)
+
+        elif be.type == 'function':
+            print(f'button action')
+            if be.row == 0:
+                print(f' reset! ')
+                self.patternReset()
+                if self.row >= 0:
+                    self.lpm.button_color_set('pad', self.row, self.column, self.lpm.colors['off']) # black turn off
+
+
+    def drawPad(self) -> None:
+        return
+
+    def clear(self) -> None:
+        if self.row >= 0:
+            self.lpm.button_color_set('pad', self.row, self.column, self.lpm.colors['off']) # black turn offs
+        self.row = -1
+        self.column = -1
+        return
+
+    # doing this cheap and just blocking. Hopefully it's OK? I could also spawn this into a different
+    # thread and it'll go away when it's done
+    def patternChange(self, pattern_o):
+
+        address = self.status.address
+        port = self.status.command_port
+        uri = f'http://{address}:{port}/flamatik'
+        msg = {}
+        for k,v in pattern_o.items():
+            if k in ['row', 'column']:
+                pass
+            elif k == 'pattern':
+                msg['name'] = v
+            else:
+                msg[k] = v
+        msg['command'] = 'setPattern'
+        if 'repeat' not in msg:
+            msg['repeat'] = 999999
+
+        print('pattern change: uri ',uri)
+
+        try:
+            response = requests.post(uri, json=msg, timeout=0.020)
+            if response.status_code == 200:
+                print(f'success: sent {pattern_o} to launchpad at {address}')
+            else:
+                print(f'fail: response code {response.status_code} from request to launchpad at {address}')
+        except requests.exceptions.Timeout:
+            print('fail: the request timed out')
+        except requests.exceptions.RequestException as e:
+            print('fail: error occurred', e)
+
+    def patternReset(self):
+        address = self.status.address
+        port = self.status.command_port
+        uri = f'http://{address}:{port}/flamatik'
+        msg = {'command': 'resetPattern'}
+
+        print('pattern reset: uri ',uri)
+
+        try:
+            response = requests.post(uri, json=msg, timeout=0.020)
+            if response.status_code == 200:
+                print(f'success: sent patternReset to launchpad at {address}')
+            else:
+                print(f'fail: response code {response.status_code} from request to launchpad at {address}')
+        except requests.exceptions.Timeout:
+            print('fail: the request timed out')
+        except requests.exceptions.RequestException as e:
+            print('fail: error occurred', e)
+
+
+
+#
+#
+# Thread for reading broadcasted status from Flamatik on a UDP packet
+# It's both interesting and lets us know where to send commands (directed)
+#
+
+class StatusReceiver():
+    def __init__(self):
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.bind(("0.0.0.0", STATUS_PORT))
+
+    def recv(self, flam: FlamatikStatus):
+        data, addr = self.sock.recvfrom(2000)
+
+        try:
+            json_data = data.decode('ascii')
+            parsed_data = json.loads(json_data)
+        except json.JSONDecodeError:
+            print(f' bad status data parse addr: {addr[0]} data {parsed_data}')
+            return
+
+       # print(f' received uptime {parsed_data["uptime"]} from device {parsed_data["device"]} address {addr[0]}')
+       #  print(f' apertures: {parsed_data["apertures"]}')
+
+        flam.set(addr, parsed_data)
+
+def status_receiver_thread(recv, flam: FlamatikStatus):
+    while True:
+        recv.recv(flam)
+
+def status_receiver_init(recv, flam: FlamatikStatus):
+    thread = Thread(target=status_receiver_thread, args=(recv,flam) )
+    thread.daemon = True
+    thread.start()
+
+
 
 
 def args_init():
@@ -421,25 +810,36 @@ def args_init():
 
 def main():
 
-    global OSC_XMIT
 
     args = args_init()
 
-    # get the launchpad and init
+    # get the launchpad and init. Exit if not found so the service can auto
+    # restart and try again
 
-    launchpad = LaunchpadMiniMk2(mode_action, function_action, pad_action)
+    launchpad = LaunchpadMiniMk2()
     if not launchpad.connect():
         print(f'no launchpad connected')
         return
 
-    launchpad.clear_leds()
+    # create a flamatik status object
+    flam = FlamatikStatus(launchpad)
+
+    # create a status receiver, fill fill up flam
+    status_recv = StatusReceiver()
+    status_receiver_init(status_recv, flam)
 
     # create an OSC transmitter
-    OSC_XMIT = OSCTransmitter(args)
+    osc_xmit = OSCTransmitter(args)
+    xmit_thread_init(osc_xmit)
 
-    xmit_thread_init(OSC_XMIT)
+    # create the modes and register them
+    launchpad.mode_register( MomentaryMode(launchpad, osc_xmit), 0)
+    launchpad.mode_register( LatchMode(launchpad, osc_xmit ), 1)
+    launchpad.mode_register( PatternMode(launchpad, flam), 2)
+    launchpad.mode_set(0)
 
-    # read the launchpad repeatedly. 
+    # this is basically our event loop. Read from the device. Better if it
+    # was non blocking I usppose
     try:
         while True:
             launchpad.read()

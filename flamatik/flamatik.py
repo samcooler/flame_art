@@ -44,7 +44,8 @@ import socket
 from time import sleep, time
 import argparse
 import json
-from multiprocessing import Process, Event, Manager
+from multiprocessing import Process, Event, Manager, Queue
+import queue
 from types import SimpleNamespace
 import asyncio
 import math
@@ -59,18 +60,24 @@ from pythonosc import osc_server
 import netifaces
 # importlib is necessary for the strange plugin system
 import importlib
+#
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from urllib.parse import urlparse, parse_qs
 
 import glob 
 import os
 import sys
 
-from typing import List, Any
+from typing import Dict, List, Any
 
 import logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
+STATUS_PORT = 6510
 
 OSC_PORT = 6511 # a random number. there is no OSC port because OSC is not a protocol
+
+COMMAND_PORT = 6509
 
 ARTNET_PORT = 6454
 ARTNET_UNIVERSE = 0
@@ -153,8 +160,8 @@ class LightCurveState:
 # not quite sure if I need a shared namespace or a simple namespace will do.
 # if all the objects in the namespace are themselves shared, then a simple namespace should work.
 # if there are any non-shared objects (eg, integers or strings), then I must use a shared namespace?
-#        self.s = manager.Namespace()
-        self.s = SimpleNamespace()
+# you need the shared namespace if you're going to have a straight member, like the nozzle buttons time.
+        self.s = manager.Namespace()
         s = self.s
         s.apertures = manager.list( [0.0] * self.nozzles )
         s.solenoids = manager.list( [0] * self.nozzles )
@@ -166,13 +173,16 @@ class LightCurveState:
         # the direction in which gravity currently is
         s.gravity = manager.list( [0.0] * 3 )
 
+        s.nozzle_buttons_last_recv = None
         s.nozzle_buttons = manager.list( [False] * NOZZLE_BUTTON_LEN )
-        s.control_buttons = manager.list( [False] * CONTROL_BUTTON_LEN )
+        s.nozzle_buttons_1_last_recv = None
+        s.nozzle_buttons_1 = manager.list( [False] * NOZZLE_BUTTON_LEN )
 
         self.debug = debug
 
         # The arguments structure is a convenient way to get information to patterns.
         self.args = args
+        self.command_queue = Queue() # multiprocessing queue
 
         # validate the solenoid and aperture maps, make sure every nozzle is mapped
         solenoid_map = [-1] * self.nozzles
@@ -225,6 +235,30 @@ class LightCurveState:
 
     def print_solenoid(self):
         print(self.s.solenoids)
+
+    # if you don't receive a packet after 1 second, turn off
+    # as usual, be careful with setting data in the shared structure. Has to change values, not the array
+    def nozzle_button_timeout_check(self):
+        now = time()
+        if self.s.nozzle_buttons_last_recv is not None:
+            # print(f' nozzle button last recv {self.s.nozzle_buttons_last_recv}')
+            if self.s.nozzle_buttons_last_recv + 1.0 < now:
+                print(f' nozzle button og timeout:')
+                self.s.nozzle_buttons_last_recv = None
+                for i in range(self.nozzles):
+                    self.s.nozzle_buttons[i] = False
+
+        if self.s.nozzle_buttons_1_last_recv is not None:
+            # print(f' nozzle button last recv {self.s.nozzle_buttons_1_last_recv}')
+            if self.s.nozzle_buttons_1_last_recv + 1.0 < now:
+                print(f' nozzle button 1 timeout:')
+                self.s.nozzle_buttons_1_last_recv = None
+                for i in range(self.nozzles):
+                    self.s.nozzle_buttons_1[i] = False
+
+# 
+# This transmitter class sends packets to the control boards.
+#
 
 
 class LightCurveTransmitter:
@@ -298,27 +332,24 @@ class LightCurveTransmitter:
                 #         (self.state.s.apertures[aperture] < 0.0) or (self.state.s.apertures[aperture] > 1.0)):
                 #     print(f'flow at {i+offset} out of range {self.state.s.apertures[aperture]} skipping')
 
-# FILTER
-# In the case where the solenoid and aperture are mapped to the same physical device,
-# it is useful to turn off the solenoid when the aperture value is small. However, before mapping,
-# it doesn't work, because the apertures and nozzles are not the same physical device.
-
-#                if self.state.s.apertures[i+offset] < 0.10:
-#                    print(f'force to 0 solenoid {i+offset}')
-#                    packet[ARTNET_HEADER_SIZE + (i*2) ] = 0
-#                else:
-
                 # compose in the buttons if enabled
 
-                if use_buttons and (self.state.s.nozzle_buttons[solenoid]):
+                # if the flag is set, override what the pattern wants with the information
+                # we received over OSC. This is a very primitive form of pattern mixing.
+                # We could also build a more arbitrary one.
+                # also note that the button wants all the fire, so we have to also set the servo to 1.0
+
+                if use_buttons and ((self.state.s.nozzle_buttons[solenoid]) or (self.state.s.nozzle_buttons_1[solenoid])):
                     # print(f' firing logical {i} physical {solenoid} because button')
                     s = True
+                    a = 1.0
                 else:
                     s = self.state.s.solenoids[solenoid]
+                    a = self.state.s.apertures[aperture]
 
                 packet[ARTNET_HEADER_SIZE + (i*2) ] = s
 
-                packet[ARTNET_HEADER_SIZE + (i*2) + 1] = math.floor(self.nozzle_apply_calibration( aperture, self.state.s.apertures[aperture] ) )
+                packet[ARTNET_HEADER_SIZE + (i*2) + 1] = math.floor(self.nozzle_apply_calibration( aperture, a ) )
 
             # transmit
             if self.debug:
@@ -346,6 +377,9 @@ def transmitter_server(state: LightCurveState, terminate: Event):
             t1 = time()
 
             xmit.transmit()
+
+            # a bit of a hack to put it here, should have its own thread or process, sorry so lazy
+            state.nozzle_button_timeout_check()
 
             d = delay - (time() - t1)
             if (d > 0.002):
@@ -376,6 +410,138 @@ def transmitter_server_shutdown():
     TRANSMITTER_PROCESS.join()
 
 
+#
+# This transmitter class sends broadcast packets with status
+# it allows controllers to find Flamatik, and allows them to display
+# any number of status things.
+#
+# Had a big question about what protocol is best for this kind of thing.
+# OSC seems a little weird, JSON seems that way too. May switch.
+#
+# The status here is in 'abstract nozzels' not physical nozzels,
+# so we don't need as much information about the config files
+#
+# Like the other classes here, this will run in its own process and
+# read from the shared memory in the LightCurveState
+#
+
+
+class LightCurveStatusXmit:
+
+    def __init__(self, state: LightCurveState) -> None:
+
+        print('initialize light curve status transmitter')
+
+        self.state = state
+        self.sequence = 0
+        # override this if you want just the transmitter debugging
+        self.debug = state.debug
+
+        self.port = STATUS_PORT
+
+        # since we want uptime, store the start time (close enough)
+        self.start_time = time()
+        self.sequence = 0
+
+        # create outbound socket
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # UDP
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+        # find a good address to send to
+        # more robust code would consider checking this every so often and sending to a different
+        # address, or, at least, catching errors sent to this address and looking for a new value?
+        if state.args.broadcast != "":
+            self.address = state.args.broadcast
+        else:
+            bs = get_broadcast_addresses()
+            if len(bs) == 1:
+                self.address = bs[0]
+            elif len(bs) == 0:
+                print(f' attempting to find a broadcast address but none configured none available')
+                self.address = ""
+            elif len(bs) > 1:
+                print(f'warning! more than one broadcast address! {bs}')
+                self.address = bs[0]
+        print(f' StatusXmit on address {self.address}')
+
+
+    # call each time
+    def transmit(self) -> None:
+
+        print(f'status transmit') if self.debug else None
+
+        # build a data structure that has the info we'er interesting in
+        # it would be good to round all the floats to save data
+
+        data = {
+            "device": "lightcurve",
+            "version": "1.0",
+            "command_port": int(COMMAND_PORT),
+            "uptime": round(time() - self.start_time,3), # don't take up too much bandwidth
+            "solenoids": self.state.s.solenoids[:], # take a copy for transmission
+            "apertures": [round(item,3) for item in self.state.s.apertures[:]],
+            "gyro": [round(item,3) for item in self.state.s.gyro[:]],
+            "rotation": [round(item,3) for item in self.state.s.rotation[:]],
+            "gravity": [round(item,3) for item in self.state.s.gravity[:]],
+            "seq": self.sequence # allows estimation of packet loss
+        }
+        self.sequence += 1
+
+        # bad form. Should abstract out this instead of replicating it.
+        if not self.state.args.nobuttons:
+            for n in range(self.state.args.nozzles):
+                if ((self.state.s.nozzle_buttons[n]) or (self.state.s.nozzle_buttons_1[n])):
+                    data['solenoids'][n] = True
+
+
+        # the separators command greatly decreases the size by removing unnecessary spaces
+        # slightly better code would also round the values in floating point to only 2 figures,
+        # this is done with a custom encoder, you can look it up TODO
+        json_data = json.dumps(data, separators=(',',':'))
+
+        byte_data = json_data.encode('ascii')
+
+        # todo: add the correct outbound address, which has to be looked up
+        # and thus be on the right interface broadcast
+        self.sock.sendto(byte_data,(self.address,self.port))
+
+
+
+# background 
+
+# see comment about state, it is a cross process shared object.
+# this function is a separate process
+
+def status_xmit_server(state: LightCurveState):
+
+    xmit = LightCurveStatusXmit(state)
+
+    # delay = 1.0 / state.args.fps
+    delay = 1.0 / 5.0 # hardcode FPS to 5 to avoid network thrash
+    # print(f'delay is {delay} fps is {xmit.fps}')
+    try:
+        while True:
+            t1 = time()
+
+            xmit.transmit()
+
+            d = delay - (time() - t1)
+            if (d > 0.002):
+                sleep(d)
+
+    except KeyboardInterrupt:
+        pass
+
+
+def status_xmit_server_init(state: LightCurveState):
+
+    print('status xmit server init')
+    process = Process(target=status_xmit_server, args=(state,) )
+    # going to use Daemon because we don't need a clean shutdown, we're just sending status
+    process.daemon = True
+    process.start()
+
+
 
 # it appears in python when we set up a broadcast listerner
 # we would just listen on 0.0.0.0 so we probably won't need any of this
@@ -396,6 +562,23 @@ def get_interface_addresses():
 
     print(f'interfaces addresses are: {interface_addrs}')
     return interface_addrs
+
+BROADCAST_BLACKLIST = [ '172.26.47.255', '127.255.255.255']
+
+def get_broadcast_addresses():
+    interfaces = netifaces.interfaces()
+    interface_broadcasts = []
+
+    for interface in interfaces:
+        addresses = netifaces.ifaddresses(interface)
+        if netifaces.AF_INET in addresses:
+            ipv4_info = addresses[netifaces.AF_INET][0]
+            broadcast_address = ipv4_info.get('broadcast')
+            if broadcast_address and broadcast_address not in BROADCAST_BLACKLIST:
+                interface_broadcasts.append(broadcast_address)
+
+    # print(f'broadcast addresses are: {interface_broadcasts}')
+    return interface_broadcasts
 
 # handler has the address then a tuple of the arguments then the self argument of the receiver
 # Not yet sure how to get the timestamp out of the bundle
@@ -457,18 +640,19 @@ def osc_handler_nozzles(address: str, fixed_args: List[Any], *vals):
     if len(vals) != len(state.s.nozzle_buttons):
         print(f'Nozzle Buttons: expected {len(state.s.nozzle_buttons)} found len {len(vals)} ignoring')
         return
-#    for idx, v in enumerate(vals):
-#        if v:
-#            print(f' nozzle buttons: index {idx} is true ')
+    state.s.nozzle_buttons_last_recv = time()
     state.s.nozzle_buttons[:] = vals
 
-def osc_handler_controls(address: str, fixed_args: List[Any], *vals):
+# used to capture a second state diagram of buttons
+
+def osc_handler_nozzles_1(address: str, fixed_args: List[Any], *vals):
     state = fixed_args[0]
-    print(f' osc: controls {vals}') if state.debug else None
-    if len(vals) != len(state.s.control_buttons):
-        print(f'Control buttons: expected {len(state.s.control_buttons)} found {len(vals)} ignoring')
+    print(f' osc: nozzles 1 {vals}') if state.debug else None 
+    if len(vals) != len(state.s.nozzle_buttons):
+        print(f'Nozzle Buttons 1: expected {len(state.s.nozzle_buttons)} found len {len(vals)} ignoring')
         return
-    state.s.control_buttons[:] = vals
+    state.s.nozzle_buttons_1_last_recv = time()
+    state.s.nozzle_buttons_1[:] = vals
 
 
 #this has never worked
@@ -508,7 +692,7 @@ def osc_server(state: LightCurveState, address: str):
     dispatcher.map('/LC/imu', osc_handler_imu, state)
 
     dispatcher.map('/LC/nozzles', osc_handler_nozzles, state)
-    dispatcher.map('/LC/controls', osc_handler_controls, state)
+    dispatcher.map('/LC/nozzles/1', osc_handler_nozzles_1, state)
     dispatcher.set_default_handler(osc_handler_all, state)
 
     server = BlockingOSCUDPServer((address, OSC_PORT), dispatcher)
@@ -543,6 +727,92 @@ def osc_server_init(state: LightCurveState, args):
     OSC_PROCESS.daemon = True
     OSC_PROCESS.start()
 
+
+#
+# Command listener - HTTP
+# There are commands we wish to receive over reliable HTTP instead of continually broadcast over UDP
+# with OSC, like changing a pattern. This HTTP listener allows that.
+#
+# I'm just tossing in some HTTP and JSON. There are too many options, so I'm going
+# with the endpoint 'flamatik', and all the rest of the data in the json.
+
+class CommandHTTPServer(HTTPServer):
+    def __init__(self, server_address, RequestHandlerClass, state: LightCurveState):
+        print(f'CommandHTTPServer: server address {server_address}')
+        super().__init__(server_address, RequestHandlerClass)
+        self.lc_state = state
+
+class CommandHandler(BaseHTTPRequestHandler):
+
+    def do_POST(self):
+        # print(f' post receved from {self.path} ')
+        parsed_url = urlparse(self.path)
+        # print(f' received post to path {parsed_url.path}')
+        if parsed_url.path != '/flamatik':
+            print(f' recevied command for incorrect endpoint')
+            self.send_error(400, "wrong path")
+            return
+
+        content_length = int(self.headers['Content-length'])
+        post_data = self.rfile.read(content_length)
+
+        status = 400 # bad request
+
+        try:
+            data = json.loads(post_data.decode('utf-8'))
+            print(f' received json command at {self.path} :: {data}')
+
+            self.server.lc_state.command_queue.put(data)
+            status = 200
+
+            # would be nice to return a status but then that would be synchronous.
+            # could probably have a validate....
+
+            # build a response put it in json_response
+            #json_response = ""
+            #json_bytes = json.dumps(json_response).encode('utf-8')
+            #response = ( f"HTTP/1.1 {status} OK\r\n"
+            #            "Content-type: application/json\r\n"
+            #            f'Content-length: {len(json_bytes)}\r\n\r\n'
+            #            ).encode('utf-8') + json_bytes
+
+            response = ( f"HTTP/1.1 {status} OK\r\n"
+                        "Content-type: application/json\r\n"
+                        f'Content-length: 0\r\n\r\n'
+                    ).encode('utf-8')
+
+
+            self.wfile.write(response)
+
+        except json.JSONDecodeError:
+            print('Data is not JSON')
+            self.send_error(400, "bad content object") # bad request
+            return
+
+    def do_GET(self):
+        print(f' received get URI {self.path} which we dont support')
+        # parsed_url = urlparse(self.path)
+
+        status = 404
+        response = ( f"HTTP/1.1 {status} OK\r\n\r\n").encode('ascii') + json_bytes
+
+        self.wfile.write(response)
+
+
+def command_server(port:int, state: LightCurveState):
+    print(f'command server process: port {port}')
+    try:
+        httpd = CommandHTTPServer(('', port), CommandHandler, state)
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    print(f' command server terminating')
+
+def command_server_init(port: int, state: LightCurveState):
+    print(f'command server init: port {port}')
+    command_process = Process(target=command_server, args=(port,state))
+    command_process.daemon = True
+    command_process.start()
 
 
 # useful helper function
@@ -608,18 +878,33 @@ def import_patterns():
 def patterns():
     return ' '.join(PATTERN_FUNCTIONS.keys())
 
-def pattern_execute(pattern: str, state) -> bool:
+PATTERN_PARAMETERS = [ "nozzle", "delay", "group" ]
 
-    if pattern in PATTERN_FUNCTIONS:
-        return PATTERN_FUNCTIONS[pattern](state)
-    else:
-        return False
+# object 
+def pattern_execute(pattern_o: Dict, state) -> Process:
 
-    return True
+    print(f'pattern execute: {pattern_o}')
+
+    pattern_name = pattern_o['name']
+    if pattern_name not in PATTERN_FUNCTIONS:
+        return None 
+
+    # overwrite the values in args with pattern properties
+    # later todo: change all patterns to look at the pattern_object
+    for param in PATTERN_PARAMETERS:
+        if param in pattern_o:
+            print(f'Found {param} replacing with {pattern_o[param]}')
+            setattr(state.args, param, pattern_o[param])
+        else:
+            setattr(state.args, param, None)
+
+    pattern_process = Process(target=PATTERN_FUNCTIONS[pattern_name], args=(state,) )
+    return pattern_process
 
 
 def pattern_insert(pattern_name: str, pattern_fn):
     PATTERN_FUNCTIONS[pattern_name] = pattern_fn
+
 
 
 def pattern_multipattern(state: LightCurveState):
@@ -647,50 +932,142 @@ def pattern_multipattern(state: LightCurveState):
 #    ]
 
 # these will be copied to the pattern if they exist
+# return the playlist of the default
+def flamatik_playlist_reset(args):
 
-PATTERN_PARAMETERS = [ "nozzle", "delay", "group" ]
+    playlist = None
 
+    if args.list != "":
 
-def execute_list(args, state: LightCurveState):
+        print(' execute: have a playlist file load it')
 
-    # load config file
-    with open(args.list) as playlist_f:
-        playlist = json.load(playlist_f)  # XXX catch exceptions here.
+        # load config file
+        with open(args.list) as playlist_f:
+            playlist = json.load(playlist_f)  # XXX catch exceptions here.
 
-    # validate file
+        # validate file
+        for idx, p in enumerate(playlist):
+            if 'name' not in p:
+                print(f'playlist: entry {idx} has no name, exiting ')
+                return None
+            if p["name"] not in PATTERN_FUNCTIONS:
+                print(f'playlist: entry {idx} name {p["name"]} is not a valid pattern name, exiting')
+                return None
+            if 'duration' not in p:
+                print(f'playlist: entry {idx} name {p["name"]} has no duration, exiting ')
+                return None
 
-    for idx, p in enumerate(playlist):
-        if 'name' not in p:
-            print(f'playlist: entry {idx} has no name, exiting ')
-            return
-        if p["name"] not in PATTERN_FUNCTIONS:
-            print(f'playlist: entry {idx} name {p["name"]} is not a valid pattern name, exiting')
-            return
-        if 'duration' not in p:
-            print(f'playlist: entry {idx} name {p["name"]} has no duration, exiting ')
-            return
-
-    for p in playlist:
-        # replace the parameters if available
+    # if the args list wasn't null
+    else:
+        # cons a playlist out of the current arguments
+        print(f' a pattern on the command line make a single item playlist')
+        p = {
+            'name': args.pattern,
+            'repeat': args.repeat,
+        }
+        # TODO: this is wrong after the first time, but we'll fix this when
+        # we stop the hack of using args to pass parameters to functions
         for param in PATTERN_PARAMETERS:
-            if param in p:
-                print(f'Found {param} in {p["name"]} replacing with {p[param]}')
-                setattr(state.args, param, p[param])
+            if hasattr(args,param): # note: since args is a namespace, you can't use in
+                print(f'Found {param} in args copying to default execution')
+                p['param'] = getattr(args,param)
             else:
-                setattr(state.args, param, None)
- 
+                p['param'] = None
+        playlist = (p,)
 
-        print(f' starting pattern {p["name"]} for {p["duration"]} seconds')
+    return playlist
 
-        pattern_process = Process(target=PATTERN_FUNCTIONS[p["name"]], args=(state,) )
-        pattern_process.start()
-        pattern_process.join(timeout=p["duration"])
-        if pattern_process.is_alive():
+
+
+
+# now there's an execute list. It could start out with
+# a pattern, or a playlist, but it listens on the command queue and switches patterns
+# if requested
+# create a dict with 'name' for the pattern, duration, and other parameters, it will be executed
+
+def flamatik_execute(args, state: LightCurveState):
+
+    playlist = ()
+    playlist_index = 0
+    pattern_process = None
+
+    print('flamatik execute')
+
+    playlist = flamatik_playlist_reset(args)
+
+    # execute whichever is p next
+    while True:
+
+        # if the pattern has terminated, clean the variable to allow the next to execute
+        if pattern_process is not None and pattern_process.is_alive() is False:
+            pattern_process = None
+
+        # launch a new pattern if we're not running one
+        if pattern_process is None:
+
+            p = playlist[playlist_index % len(playlist)]
+            playlist_index += 1
+
+            print(f' command: starting pattern {p["name"]}')
+            if p["name"] not in PATTERN_FUNCTIONS:
+                # todo: find a better thing to do than this
+                print(" ERROR received pattern that does not exist")
+                continue
+
+            pattern_process = pattern_execute(p, state)
+            pattern_start = time()
+            if 'duration' in p:
+                pattern_end = time() + p["duration"]
+            else:
+                pattern_end = 0.0
+
+            pattern_process.start()
+
+        # check the command queue, do something if we can
+        try:
+            msg = state.command_queue.get_nowait()
+            print(f' receieved command in execute: {msg}')
+            cmd = msg['command']
+            if cmd == 'setPattern':
+                print(f' set pattern received, changing pattern to {msg["name"]}')
+
+                # check that pattern exists
+
+                # replace the playlist with this
+                playlist = (msg,)
+
+                # terminate what is running
+                if pattern_process.is_alive():
+                    pattern_process.terminate()
+                    pattern_process.join()
+                    pattern_process = None
+                    pattern_end = 0.0
+
+            elif cmd == 'resetPattern':
+
+                print(f' reset pattern received, resetting to original pattern or playlist')
+
+                playlist = flamatik_playlist_reset(args)
+
+                # terminate what is running
+                if pattern_process.is_alive():
+                    pattern_process.terminate()
+                    pattern_process.join()
+                    pattern_process = None
+                    pattern_end = 0.0
+
+        except queue.Empty:
+            pass
+
+        # check the duration, kill if out of time
+        if pattern_end > 0.0 and pattern_end < time():
+            print(f' Ending pattern {p["name"]} end was {pattern_end}')
             pattern_process.terminate()
-            sleep(0.1)
+            pattern_process.join()
+            pattern_process = None 
+            pattern_end = 0.0
 
-        print(f' starting finished pattern {p["name"]}')
-
+        sleep(0.01)
 
 #
 #
@@ -701,6 +1078,7 @@ def args_init():
 
     parser.add_argument('--pattern', '-p', default="pulse", type=str, help=f'pattern one of: {patterns()}')
     parser.add_argument('--address', '-a', default="0.0.0.0", type=str, help=f'address to listen OSC on defaults to broadcast on non-loop')
+    parser.add_argument('--broadcast', '-b', default="", type=str, help='use a specific broadcast address to send status')
     parser.add_argument('--fps', '-f', default=15, type=int, help='frames per second')
     parser.add_argument('--repeat', '-r', default=9999, type=int, help="number of times to run pattern")
     parser.add_argument('--nobuttons',  action='store_true', help="add this if you want to disable the button function")
@@ -736,7 +1114,7 @@ def main():
     global debug
     debug = args.debug
 
-    if (args.list != "") and (args.pattern not in PATTERN_FUNCTIONS):
+    if (args.list == "") and (args.pattern not in PATTERN_FUNCTIONS):
         print(f' pattern must be one of {patterns()}')
         return
 
@@ -749,23 +1127,21 @@ def main():
             return
 
         # creates a transmitter background process that reads from the shared state
+        # and sends to controllers (unicast)
         transmitter_server_init(state)
+
+        # create a status transmitter which broadcasts over the local network
+        # some interesting information
+        status_xmit_server_init(state)
 
         # creates a osc server receiver process which fills the shared state
         osc_server_init(state, args)
 
+        # creates an HTTP listener which can receive JSON or OSC commands like change pattern
+        command_server_init(COMMAND_PORT, state)
 
         try:
-
-            # if there's a playlist (list) play it, otherwise, play the pattern
-            if (args.list != ""):
-                execute_list(args, state)
-
-            else:
-
-                # run it bro
-                    for _ in range(args.repeat):
-                        pattern_execute(args.pattern, state)
+            flamatik_execute(args,state)
 
         except KeyboardInterrupt: # be silent in this case
             pass
