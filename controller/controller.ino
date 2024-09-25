@@ -1,4 +1,17 @@
+#define board_version 2
+
 #include <Adafruit_PWMServoDriver.h>
+#include <Adafruit_NeoPixel.h>
+
+Adafruit_NeoPixel rgb_leds(2, D6, NEO_GRB + NEO_KHZ800);
+uint32_t led_status = 0;
+const uint32_t led_status_okay = rgb_leds.Color(0, 255, 0);
+const uint32_t led_status_uninit = rgb_leds.Color(255, 0, 0);
+
+uint32_t led_mode = 0;
+const uint32_t led_mode_startup = rgb_leds.Color(255, 0, 0);
+const uint32_t led_mode_wifi = rgb_leds.Color(0, 0, 255);
+const uint32_t led_mode_artmode = rgb_leds.Color(0, 255, 0);
 
 // PCA9539 i2c GPIO expander
 #include "src/lib/PCA9539.h"
@@ -204,6 +217,8 @@ void printWifiStatus()
     Serial.print("signal strength (RSSI):");
     Serial.print(rssi);
     Serial.println(" dBm");
+
+
   }
   else
   {
@@ -249,6 +264,9 @@ void beginArtnet()
   artnetActive = true;
   artnet.begin();
   artnet.setArtDmxCallback(onDmxFrame);
+
+  led_mode = led_mode_wifi;
+  update_rgb_led_color();
 }
 
 void endArtnet()
@@ -304,6 +322,16 @@ void readSwitches()
   switch3 = 0;
 }
 
+// RGB LED functions
+
+void update_rgb_led_color()
+{
+  if (board_version < 2) return;
+  rgb_leds.setPixelColor(0, led_status);
+  rgb_leds.setPixelColor(1, led_mode);
+  rgb_leds.show();
+}
+
 //
 //
 // ARDUINO ENTRY POINTS
@@ -315,6 +343,17 @@ void setup()
   Serial.begin(115200);
   delay(1000);
   Serial.println("START");
+
+  // initialize RGB LEDs for status and mode
+  if (board_version >= 2)
+  {
+    rgb_leds.begin();
+    rgb_leds.show();
+    rgb_leds.setBrightness(50); // 50/255 
+    led_status = led_status_uninit;
+    led_mode = led_mode_startup;
+    update_rgb_led_color();
+  }
 
   // initialize solenoid pins
   pca9539.pinMode(pca_A0, OUTPUT); // 0
@@ -330,7 +369,7 @@ void setup()
   pca9539.pinMode(pca_B2, OUTPUT); // 10
   pca9539.pinMode(pca_B3, OUTPUT); // 11
   pca9539.pinMode(pca_B4, OUTPUT); // 12
-  // I believe these are input switches but didn'tw ork?
+  // I believe these are input switches but didn't work?
 #if 0
   pca9539.pinMode(pca_B5, OUTPUT); // SW1
   pca9539.pinMode(pca_B6, OUTPUT); // SW2
@@ -360,6 +399,9 @@ void setup()
     // enable and turn off solenoid outputs
     setSolenoidState(i, 0); // Initially off
   }
+
+  led_status = led_status_okay;
+  update_rgb_led_color();
 
   // Start trying to connect to wifi
   beginWifi();
@@ -481,6 +523,8 @@ void initArtMode()
     valveData[i].solenoidState = random(2); // Randomly set to true or false
   }
   artModeActive = true;
+  led_mode = led_mode_artmode;
+  update_rgb_led_color();
 }
 
 void updateArtMode(unsigned long currentTime)
