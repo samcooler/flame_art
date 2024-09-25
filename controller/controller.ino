@@ -1,4 +1,5 @@
 #define board_version 2
+#define board_address 201
 
 #include <Adafruit_PWMServoDriver.h>
 #include <Adafruit_NeoPixel.h>
@@ -19,7 +20,7 @@ PCA9539 pca9539(0x77);
 
 #include <ArtnetWifi.h>
 
-IPAddress ip(192, 168, 13, 201);
+IPAddress ip(192, 168, 13, board_address);
 IPAddress gateway(192, 168, 13, 1);
 IPAddress subnet(255, 255, 255, 0);
 const char *ssid = "lightcurve";
