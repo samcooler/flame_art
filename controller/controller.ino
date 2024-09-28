@@ -92,7 +92,7 @@ unsigned long millisLastArtnet = 0;
 //
 // set valve
 
-Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
+Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x47);
 
 int valueToMsec(int valveNum, float state)
 {
@@ -342,7 +342,7 @@ void update_rgb_led_color()
 void setup()
 {
   Serial.begin(115200);
-  delay(1000);
+  delay(2000);
   Serial.println("START");
 
   // initialize RGB LEDs for status and mode
