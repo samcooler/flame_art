@@ -342,7 +342,7 @@ void update_rgb_led_color()
 void setup()
 {
   Serial.begin(115200);
-  delay(2000);
+  delay(1000);
   Serial.println("START");
 
   // initialize RGB LEDs for status and mode
@@ -355,6 +355,12 @@ void setup()
     led_mode = led_mode_startup;
     update_rgb_led_color();
   }
+
+  // we have a pin that is the RST for the 9539
+  Serial.println(" setting reset pin to low ");
+  pinMode( D3, OUTPUT);
+  digitalWrite( D3, HIGH);
+
 
   // initialize solenoid pins
   pca9539.pinMode(pca_A0, OUTPUT); // 0
@@ -380,6 +386,7 @@ void setup()
   pca9539.pinMode(pca_B6, INPUT); // SW2
   pca9539.pinMode(pca_B7, INPUT); // SW3
 #endif
+
 
   // Initialize the servo system
   pwm.begin();
