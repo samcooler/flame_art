@@ -136,7 +136,9 @@ void displayValves(unsigned long currentTime, bool force = 0)
   }
   millisLastDisplayValves = currentTime;
 
-  Serial.println();
+  printWifiStatus();
+
+  Serial.println("");
   for (int i = 0; i < NUM_VALVES; i++)
   {
     Serial.print("Valve ");
@@ -202,7 +204,6 @@ bool isWifiConnected()
 
 void printWifiStatus()
 {
-
   if (isWifiConnected())
   {
 
