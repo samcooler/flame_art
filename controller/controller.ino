@@ -87,7 +87,7 @@ unsigned long millisLastBeginWifi = 0;
 unsigned long millisLastArtnet = 0;
 
 // number of millis without a network packet when we move to artnet
-#define ARTNET_PACKET_DELAY (30 * 1000)
+#define ARTNET_PACKET_DELAY (120 * 1000)
 
 //
 // set valve
