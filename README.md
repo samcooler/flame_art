@@ -64,7 +64,7 @@ password: curvelight
 
 Subnet: 192.168.13.0/24
 
-Router username password : admin / dadmin
+Router username password : admin / admin (at least for the production ap that seemed to work)
 
 DHCP range: 100 to 190
 
