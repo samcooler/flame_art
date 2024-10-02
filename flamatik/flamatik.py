@@ -883,7 +883,7 @@ PATTERN_PARAMETERS = [ "nozzle", "delay", "group" ]
 # object 
 def pattern_execute(pattern_o: Dict, state) -> Process:
 
-    print(f'pattern execute: {pattern_o}')
+    # print(f'pattern execute: {pattern_o}')
 
     pattern_name = pattern_o['name']
     if pattern_name not in PATTERN_FUNCTIONS:
@@ -893,7 +893,7 @@ def pattern_execute(pattern_o: Dict, state) -> Process:
     # later todo: change all patterns to look at the pattern_object
     for param in PATTERN_PARAMETERS:
         if param in pattern_o:
-            print(f'Found {param} replacing with {pattern_o[param]}')
+            # print(f'Found {param} replacing with {pattern_o[param]}')
             setattr(state.args, param, pattern_o[param])
         else:
             setattr(state.args, param, None)
@@ -969,10 +969,12 @@ def flamatik_playlist_reset(args):
         # we stop the hack of using args to pass parameters to functions
         for param in PATTERN_PARAMETERS:
             if hasattr(args,param): # note: since args is a namespace, you can't use in
-                print(f'Found {param} in args copying to default execution')
-                p['param'] = getattr(args,param)
+                # print(f'Found {param} in args copying to default execution {getattr(args,param)}')
+                p[param] = getattr(args,param)
             else:
-                p['param'] = None
+                # print(f' setting {param} to none')
+                p[param] = None
+        # print(f' cons up playlist: full with arguments {p}')
         playlist = (p,)
 
     return playlist
