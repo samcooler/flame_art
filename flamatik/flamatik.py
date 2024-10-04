@@ -446,6 +446,7 @@ class LightCurveStatusXmit:
         # create outbound socket
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # UDP
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
         # find a good address to send to
         # more robust code would consider checking this every so often and sending to a different
@@ -503,6 +504,7 @@ class LightCurveStatusXmit:
 
         # todo: add the correct outbound address, which has to be looked up
         # and thus be on the right interface broadcast
+        print(f' sending status packets to: {self.address} {self.port} ')
         self.sock.sendto(byte_data,(self.address,self.port))
 
 
