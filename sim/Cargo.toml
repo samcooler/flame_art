@@ -1,5 +1,5 @@
 [package]
-name = "server"
+name = "sim"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,5 +8,5 @@ edition = "2021"
 kiss3d = "0.35.0"
 nalgebra = "0.30.0"
 rand = "0.8.5"
-artnet_protocol = "0.4.2"
+artnet_protocol = "0.4.3"
 rosc = "0.10.1"
