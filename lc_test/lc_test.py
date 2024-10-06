@@ -293,44 +293,163 @@ def pattern_stop(state: LightCurveState, xmit: LightCurveTransmitter):
 # but use the nozzle map to make it more comprehensible
 # turn all the solenoids off other than that one
 
-def pattern_aperture(state: LightCurveState, xmit: LightCurveTransmitter, nozzle: int, flow: int) -> bool :
+def pattern_aperture_value(state: LightCurveState, xmit: LightCurveTransmitter, solenoid: int, servo: int, flow: int, hold: bool) -> bool :
 
-    if nozzle is None:
-        print(f'Specify a nozzel to use aperture test')
+    if solenoid is None:
+        print(f'Specify a solenoid to use')
+        return(False)
+    if servo is None:
+        print(f'Specify a servo to use')
         return(False)
     if flow is None:
-        print(f'Specify a flow to use aperture test')
+        print(f'Specify a flow to use')
         return(False)
 
-    if (nozzle >= state.nozzles):
-        print(f'Nozzle out of range is {nozzle} must be less than {state.nozzles}')
+    if (solenoid >= state.nozzles):
+        print(f'Solenoid out of range is {solenoid} must be less than {state.nozzles}')
+        return(False)
+    if (servo >= state.nozzles):
+        print(f'Servo out of range is {servo} must be less than {state.nozzles}')
         return(False)
     if (flow > 255) or (flow < 0):
         print(f'Flow out of range must be 255 or less, and positive, is {flow}')
         return(False)
 
-    print(f'Setting aperture {nozzle} to raw value {flow} that solenoid on')
+    print(f'Setting servo {servo} to raw value {flow} and solenoid {solenoid}')
+    print(f' all other to their 0')
+    print(f' and all solenoids off')
+
+    state.fill_solenoids(0)
+    state.s.solenoids[solenoid] = 1
+
+    state.s.raw_apertures[servo] = flow
+
+    if hold == True:
+        while True:
+            xmit.transmit()
+            sleep(0.1)
+    else:
+        xmit.transmit()
+
+
+    return(True)
+
+def pattern_click(state: LightCurveState, xmit: LightCurveTransmitter, solenoid: int) -> bool :
+
+    if solenoid is None:
+        print(f'Specify a solenoid to use clicker')
+        return(False)
+
+    if (solenoid >= state.nozzles):
+        print(f'Solenoid out of range is {solenoid} must be less than {state.nozzles}')
+        return(False)
+
+    print(f'Clicking {solenoid} ')
+    print(f' all other things to their calibrated 0')
+    print(f' and all solenoids off')
+
+    state.fill_solenoids(0)
+
+    delay = 0.01
+
+    while True:
+
+        state.s.solenoids[solenoid] = 1
+
+        xmit.transmit()
+
+        sleep(delay)
+
+        state.s.solenoids[solenoid] = 0
+
+        xmit.transmit()
+
+        sleep(delay)
+
+
+    return(True)
+
+
+# set a single servo to a raw value
+# but use the nozzle map to make it more comprehensible
+# turn all the solenoids off other than that one
+
+def pattern_aperture_sweep(state: LightCurveState, xmit: LightCurveTransmitter, solenoid: int, servo: int) -> bool :
+
+    if solenoid is None:
+        print(f'Specify a solenoid to use')
+        return(False)
+    if servo is None:
+        print(f'Specify a servo to use')
+        return(False)
+
+    if (solenoid >= state.nozzles):
+        print(f'Solenoid out of range is {solenoid} must be less than {state.nozzles}')
+        return(False)
+    if (servo >= state.nozzles):
+        print(f'Servo out of range is {servo} must be less than {state.nozzles}')
+        return(False)
+
+
+    print(f'Sweepting servo {servo} from 0 to 255 raw value and solenoid {solenoid}')
     print(f' all other apertures to their calibrated 0')
     print(f' and all solenoids off')
 
     state.fill_solenoids(0)
-    state.s.solenoids[nozzle] = 1
+    state.s.solenoids[solenoid] = 1
 
-    state.s.raw_apertures[nozzle] = flow
+    flow = 0
+    ascending = True
 
-    xmit.transmit()
+    # constants
+    step = 10
+    delay = 0.10
+
+    while True:
+
+
+        if flow > 255:
+            print(f'flow at top, descending now')
+            ascending = False
+            flow = 255
+
+        if flow < 0:
+            print(f' flow at bottom: ascending now')
+            ascending = True
+            flow = 0 
+
+        state.s.raw_apertures[servo] = flow
+
+        xmit.transmit()
+
+        if ascending:
+            flow += step
+        else:
+            flow -= step
+
+        sleep(delay)
 
     return(True)
+
 
 
 def args_init():
     parser = argparse.ArgumentParser(prog='lc_test', description='Send ArtNet packets to the Light Curve for simple testing')
     parser.add_argument('--config','-c', type=str, default="lightcurve.cnf", help='Fire Art Controller configuration file')
 
-    parser.add_argument('--nozzle', '-n', type=int, help="pattern specific: nozzel to apply to")
-    parser.add_argument('--flow', '-f', default=255, type=int, help="amount to set solenoid to")
+    parser.add_argument('--solenoid', type=int, required=True, help="solenoid to apply to")
+    parser.add_argument('--servo', type= int, help="servo to apply to")
 
-    parser.add_argument('--stop', default=False, type=bool, help="turn everything off")
+    # if flow not specified, sweep
+    parser.add_argument('--flow', '-f', type=int, help="amount to set servo to")
+
+    parser.add_argument('--hold', default=False, action='store_true', help="keep sending this value foever")
+
+    # patterns
+    parser.add_argument('--stop', default=False, action='store_true', help="turn everything off")
+
+    parser.add_argument('--click', default=False, action='store_true', help="make solinoid click so we can find it")
+
 
     args = parser.parse_args()
 
@@ -359,11 +478,16 @@ def main():
     # creates a transmitter background process that reads from the shared state
     xmit = LightCurveTransmitter(state)
 
-    if (args.stop):
+    if args.stop == True:
         pattern_stop(state, xmit)
-
+    elif args.click == True:
+        pattern_click(state, xmit, args.solenoid)
+    elif args.flow == None:
+        # no flow specified, sweep
+        pattern_aperture_sweep(state, xmit, args.solenoid, args.servo)    
     else:
-        pattern_aperture(state, xmit, args.nozzle, args.flow)
+        # flow and nozzle, set it and get out
+        pattern_aperture_value(state, xmit, args.solenoid, args.servo, args.flow, args.hold)
 
 
 
