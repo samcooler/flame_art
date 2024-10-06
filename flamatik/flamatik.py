@@ -537,7 +537,7 @@ def status_xmit_server(state: LightCurveState):
                 sleep(d)
             else:
                 print(f'status xmit server cant keep up: small pause anyway')
-                sleep(0.05)
+                sleep(0.5)
 
 
     except KeyboardInterrupt:
@@ -1147,7 +1147,7 @@ def main():
         # some interesting information
 
         # FOR SOME REASON THIS IS TERRIBLY INEFFICIENT. Removing until working better.
-        # status_xmit_server_init(state)
+        status_xmit_server_init(state)
 
         # creates a osc server receiver process which fills the shared state
         osc_server_init(state, args)
