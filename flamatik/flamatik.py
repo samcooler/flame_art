@@ -474,6 +474,8 @@ class LightCurveStatusXmit:
         # build a data structure that has the info we'er interesting in
         # it would be good to round all the floats to save data
 
+        # THIS NEEDS TO BE MORE EFFICIENT!
+
         data = {
             "device": "lightcurve",
             "version": "1.0",
@@ -519,7 +521,10 @@ def status_xmit_server(state: LightCurveState):
     xmit = LightCurveStatusXmit(state)
 
     # delay = 1.0 / state.args.fps
-    delay = 1.0 / 5.0 # hardcode FPS to 5 to avoid network thrash
+
+    # it turns out we can't keep up 5 FPS on most machines! Trying 1 fps
+
+    delay = 1.0 
     # print(f'delay is {delay} fps is {xmit.fps}')
     try:
         while True:
@@ -530,6 +535,10 @@ def status_xmit_server(state: LightCurveState):
             d = delay - (time() - t1)
             if (d > 0.002):
                 sleep(d)
+            else:
+                print(f'status xmit server cant keep up: small pause anyway')
+                sleep(0.05)
+
 
     except KeyboardInterrupt:
         pass
@@ -1136,7 +1145,9 @@ def main():
 
         # create a status transmitter which broadcasts over the local network
         # some interesting information
-        status_xmit_server_init(state)
+
+        # FOR SOME REASON THIS IS TERRIBLY INEFFICIENT. Removing until working better.
+        # status_xmit_server_init(state)
 
         # creates a osc server receiver process which fills the shared state
         osc_server_init(state, args)
