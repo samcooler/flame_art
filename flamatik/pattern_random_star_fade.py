@@ -9,7 +9,7 @@ import face_groupings as g
 
 equator = g.equators[0]
 count = len(equator)
-poof_period = 1.0
+fade_period = 1.0
 frames_per_period = 25
 min_aperture = 0.1
 max_aperture = 1.0
@@ -30,14 +30,14 @@ def pattern_random_star_fade(state: ft.LightCurveState) -> bool:
         prog = progress / frames_per_period
         for nozzle in g.stars[star_index]:
             state.s.apertures[nozzle] = min_aperture + prog * aperture_range
-        sleep(poof_period / frames_per_period)
+        sleep(fade_period / frames_per_period)
 
     # Shrink
     for progress in range(frames_per_period):
         prog = progress / frames_per_period
         for nozzle in g.stars[star_index]:
             state.s.apertures[nozzle] = max_aperture - prog * aperture_range
-        sleep(poof_period / frames_per_period)
+        sleep(fade_period / frames_per_period)
 
     # Close solenoids for selected star
     for nozzle in g.stars[star_index]:

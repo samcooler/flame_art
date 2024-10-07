@@ -19,7 +19,7 @@ def pattern_random_equator_spin_poof(state: ft.LightCurveState) -> bool:
         # Poof selected equator one face at a time
         for nozzle in g.equators[equator_index]:
             state.s.solenoids[nozzle] = 1
-            sleep(0.2)
+            sleep(0.4)
             state.s.solenoids[nozzle] = 0
 
     # Longer sleep at end since it looks better when repeated

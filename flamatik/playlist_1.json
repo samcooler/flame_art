@@ -1,0 +1,50 @@
+[
+    {
+        "name": "random_star_fade",
+        "duration": 15
+    },
+    {
+        "name": "snake_retreat",
+        "duration": 15
+    },
+    {
+        "name": "random_star_with_opposites_fade",
+        "duration": 15
+    },
+    {
+        "name": "random_equator_spin_poof",
+        "duration": 5
+    },
+    {
+        "name": "stop",
+        "duration": 2
+    },
+    {
+        "name": "random_equator_spin_poof",
+        "duration": 5
+    },
+    {
+        "name": "stop",
+        "duration": 2
+    },
+    {
+        "name": "random_equator_spin_poof",
+        "duration": 5
+    },
+    {
+        "name": "stop",
+        "duration": 2
+    },
+    {
+        "name": "equator_wave",
+        "duration": 10
+    },
+    {
+        "name": "stop",
+        "duration": 2
+    },
+    {
+        "name": "random_star_with_opposites_fade",
+        "duration": 15
+    }
+]
