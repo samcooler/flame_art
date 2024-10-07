@@ -1,39 +1,62 @@
 [
     {
         "name": "random_star_fade",
-        "duration": 15
+        "repeat": 5
+    },
+    {
+        "name": "stop",
+        "duration": 1
     },
     {
         "name": "snake_retreat",
-        "duration": 15
+        "repeat": 1
     },
     {
         "name": "random_star_with_opposites_fade",
-        "duration": 15
+        "repeat": 1
+    },
+    {
+        "name": "snake_retreat",
+        "repeat": 1
+    },
+    {
+        "name": "random_star_with_opposites_fade",
+        "repeat": 1
+    },
+    {
+        "name": "snake_retreat",
+        "repeat": 1
+    },
+    {
+        "name": "random_star_with_opposites_fade",
+        "repeat": 1
     },
     {
         "name": "random_equator_spin_poof",
-        "duration": 5
+        "spins": 3,
+        "repeat": 1
     },
     {
         "name": "stop",
-        "duration": 2
+        "duration": 1
     },
     {
         "name": "random_equator_spin_poof",
-        "duration": 5
+        "spins": 3,
+        "repeat": 1
     },
     {
         "name": "stop",
-        "duration": 2
+        "duration": 1
     },
     {
         "name": "random_equator_spin_poof",
-        "duration": 5
+        "spins": 3,
+        "repeat": 1
     },
     {
         "name": "stop",
-        "duration": 2
+        "duration": 1
     },
     {
         "name": "equator_wave",
@@ -42,9 +65,5 @@
     {
         "name": "stop",
         "duration": 2
-    },
-    {
-        "name": "random_star_with_opposites_fade",
-        "duration": 15
     }
 ]

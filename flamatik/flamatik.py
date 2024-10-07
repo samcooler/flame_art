@@ -889,7 +889,7 @@ def import_patterns():
 def patterns():
     return ' '.join(PATTERN_FUNCTIONS.keys())
 
-PATTERN_PARAMETERS = [ "nozzle", "delay", "group" ]
+PATTERN_PARAMETERS = [ "nozzle", "delay", "group", "spins" ]
 
 # object 
 def pattern_execute(pattern_o: Dict, state) -> Process:
@@ -964,8 +964,8 @@ def flamatik_playlist_reset(args):
             if p["name"] not in PATTERN_FUNCTIONS:
                 print(f'playlist: entry {idx} name {p["name"]} is not a valid pattern name, exiting')
                 return None
-            if 'duration' not in p:
-                print(f'playlist: entry {idx} name {p["name"]} has no duration, exiting ')
+            if 'duration' not in p and 'repeat' not in p:
+                print(f'playlist: entry {idx} name {p["name"]} has no duration or repeat param, exiting ')
                 return None
 
     # if the args list wasn't null
@@ -1000,13 +1000,14 @@ def flamatik_playlist_reset(args):
 
 def flamatik_execute(args, state: LightCurveState):
 
-    playlist = ()
-    playlist_index = 0
-    pattern_process = None
-
     print('flamatik execute')
 
+    pattern_process = None
     playlist = flamatik_playlist_reset(args)
+    # On the first run, the playlist selecting code will increment playlist_index since it assumes a pattern just ended
+    playlist_index = -1
+    playlist_reps = 1
+    pattern_end = None
 
     # execute whichever is p next
     while True:
@@ -1018,8 +1019,25 @@ def flamatik_execute(args, state: LightCurveState):
         # launch a new pattern if we're not running one
         if pattern_process is None:
 
-            p = playlist[playlist_index % len(playlist)]
-            playlist_index += 1
+            if playlist_reps > 1 or (pattern_end is not None and time() < pattern_end):
+                # Current pattern is not done, either due to repeats remaining or duration remaining
+                # So, repeat it
+                playlist_reps -= 1
+                p = playlist[playlist_index % len(playlist)]
+            else:
+                # Current pattern is done, since there are no repeats remaining and duration is unset or no time remaining
+                # So, go to next pattern
+                playlist_index += 1
+                p = playlist[playlist_index % len(playlist)]
+                if 'repeat' in p:
+                    playlist_reps = p['repeat']
+                else:
+                    playlist_reps = 1
+
+                if 'duration' in p:
+                    pattern_end = time() + p["duration"]
+                else:
+                    pattern_end = None
 
             print(f' command: starting pattern {p["name"]}')
             if p["name"] not in PATTERN_FUNCTIONS:
@@ -1028,12 +1046,6 @@ def flamatik_execute(args, state: LightCurveState):
                 continue
 
             pattern_process = pattern_execute(p, state)
-            pattern_start = time()
-            if 'duration' in p:
-                pattern_end = time() + p["duration"]
-            else:
-                pattern_end = 0.0
-
             pattern_process.start()
 
         # check the command queue, do something if we can
@@ -1073,7 +1085,7 @@ def flamatik_execute(args, state: LightCurveState):
             pass
 
         # check the duration, kill if out of time
-        if pattern_end > 0.0 and pattern_end < time():
+        if pattern_end is not None and pattern_end < time():
             print(f' Ending pattern {p["name"]} end was {pattern_end}')
             pattern_process.terminate()
             pattern_process.join()

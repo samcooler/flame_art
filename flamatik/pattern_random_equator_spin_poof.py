@@ -14,8 +14,11 @@ def pattern_random_equator_spin_poof(state: ft.LightCurveState) -> bool:
 
     equator_index = random.randint(0, len(g.equators) - 1)
 
-    # Repeat 3 times cause it's cool
-    for _ in range(3):
+    spins = 1
+    if state.args.spins is not None:
+        spins = state.args.spins
+
+    for _ in range(spins):
         # Poof selected equator one face at a time
         for nozzle in g.equators[equator_index]:
             state.s.solenoids[nozzle] = 1
