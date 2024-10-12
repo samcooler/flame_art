@@ -1,0 +1,18 @@
+[
+    {
+        "name": "equator_imu_single",
+        "duration": 10
+    },
+    {
+        "name": "equator_imu_ortho",
+        "duration": 10
+    },
+    {
+        "name": "trail",
+        "duration": 10
+    },
+    {
+        "name": "trail_up",
+        "duration": 10
+    }
+]
