@@ -1,0 +1,114 @@
+[
+    {
+        "name": "rings",
+        "repeat": 1,
+        "frame_delay": 0.3
+    },
+    {
+        "name": "equator_wave",
+        "duration": 5
+    },
+    {
+        "name": "rings",
+        "repeat": 1,
+        "frame_delay": 0.3
+    },
+    {
+        "name": "test_halos",
+        "repeat": 1,
+        "frame_delay": 0.4
+    },
+    {
+        "name": "stop",
+        "duration": 1
+    },
+    {
+        "name": "random_nozzle_poof",
+        "repeat": 1
+    },
+    {
+        "name": "stop",
+        "duration": 0.3
+    },
+    {
+        "name": "random_nozzle_poof",
+        "repeat": 1
+    },
+    {
+        "name": "stop",
+        "duration": 0.3
+    },
+    {
+        "name": "random_nozzle_poof",
+        "repeat": 1
+    },
+    {
+        "name": "stop",
+        "duration": 0.3
+    },
+    {
+        "name": "random_nozzle_poof",
+        "repeat": 1
+    },
+    {
+        "name": "stop",
+        "duration": 0.3
+    },
+    {
+        "name": "random_nozzle_poof",
+        "repeat": 1
+    },
+    {
+        "name": "stop",
+        "duration": 0.3
+    },
+    {
+        "name": "random_nozzle_poof",
+        "repeat": 1
+    },
+    {
+        "name": "stop",
+        "duration": 0.3
+    },
+    {
+        "name": "random_nozzle_poof",
+        "repeat": 1
+    },
+    {
+        "name": "stop",
+        "duration": 0.3
+    },
+    {
+        "name": "random_nozzle_poof",
+        "repeat": 1
+    },
+    {
+        "name": "stop",
+        "duration": 0.3
+    },
+    {
+        "name": "random_nozzle_poof",
+        "repeat": 1
+    },
+    {
+        "name": "stop",
+        "duration": 0.3
+    },
+    {
+        "name": "random_nozzle_poof",
+        "repeat": 1
+    },
+    {
+        "name": "stop",
+        "duration": 1
+    },
+    {
+        "name": "test_opposite",
+        "repeat": 1,
+        "frame_delay": 0.3
+    },
+    {
+        "name": "stop",
+        "duration": 1
+    }
+]

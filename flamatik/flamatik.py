@@ -889,7 +889,7 @@ def import_patterns():
 def patterns():
     return ' '.join(PATTERN_FUNCTIONS.keys())
 
-PATTERN_PARAMETERS = [ "nozzle", "delay", "group", "spins" ]
+PATTERN_PARAMETERS = [ "nozzle", "delay", "group", "spins", "frame_delay" ]
 
 # object 
 def pattern_execute(pattern_o: Dict, state) -> Process:
