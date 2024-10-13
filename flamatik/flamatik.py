@@ -532,12 +532,14 @@ def status_xmit_server(state: LightCurveState):
 
             xmit.transmit()
 
-            d = delay - (time() - t1)
-            if (d > 0.002):
-                sleep(d)
-            else:
-                print(f'status xmit server cant keep up: small pause anyway')
-                sleep(0.5)
+            sleep(0.5)
+
+#            d = delay - (time() - t1)
+#            if (d > 0.002):
+#                sleep(d)
+#            else:
+#                print(f'status xmit server cant keep up: small pause anyway')
+#                sleep(0.5)
 
 
     except KeyboardInterrupt:
