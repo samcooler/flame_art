@@ -1066,7 +1066,8 @@ def flamatik_execute(args, state: LightCurveState):
                     pattern_process.terminate()
                     pattern_process.join()
                     pattern_process = None
-                    pattern_end = 0.0
+                    pattern_end = None
+                    playlist_index = -1
 
             elif cmd == 'resetPattern':
 
@@ -1079,7 +1080,8 @@ def flamatik_execute(args, state: LightCurveState):
                     pattern_process.terminate()
                     pattern_process.join()
                     pattern_process = None
-                    pattern_end = 0.0
+                    pattern_end = None
+                    playlist_index = -1
 
         except queue.Empty:
             pass
@@ -1090,7 +1092,7 @@ def flamatik_execute(args, state: LightCurveState):
             pattern_process.terminate()
             pattern_process.join()
             pattern_process = None 
-            pattern_end = 0.0
+            pattern_end = None
 
         sleep(0.01)
 
