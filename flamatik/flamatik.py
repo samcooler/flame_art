@@ -46,7 +46,6 @@ import argparse
 import json
 from multiprocessing import Process, Event, Manager, Queue
 import queue
-from types import SimpleNamespace
 import asyncio
 import math
 
@@ -129,6 +128,26 @@ def _artnet_packet(universe: int, sequence: int, packet: bytearray ):
 #
 # A note about using shared memory in Python multiprocessing!
 #
+# Zero-ith: The Manager code has SERIOUS PERFORMANCE ISSUES. It is written with a "proxy server"
+# and a TLS network request to the proxy server for EVERY ACCESS. This is cool in the case
+# where you want to use Manager with a true remote object store, but really shitty if you think
+# it has the same performance as a shared memory store!
+#
+# Talking with ChatGPT, it appears there is a framework Ray which has a far more sensible system.
+# Ray Actors are the object store and woudl be suitable here.
+# Or, the shared_memory module with a custom serializer.
+# Or, multiprocessing.Array and multiprocessing.Value - which are shared memory and fast
+# Or, use multiprocessing.sharedctypes then the ctypes system, which in our
+# case probably means a custom serializer or something similar - and probably some locks.
+#
+# For now, you'll see cases where we take a copy from the shared object all-in-one-go, then
+# do accesses from them. That's because the issue isn't the amount of memory, it's the individual
+# accesses which are slow.
+#
+# It's probably also true that the process which holds the proxy (allocates the manager) is native speed,
+# and all the other processes are slow. That's why when I created the status-xmit process, it's accesses
+# are staggeringly bad. Beware.
+#
 # First fun fact: When you create a shared Namespace, objects within it are created shared, but not recursively.
 # this means you can create an entire list, assign it to the namespace, and that list will be shared.
 # However, mutations to that list will not be shared! That only happens if the list is also shared.
@@ -157,10 +176,8 @@ class LightCurveState:
         self.nozzles = args.nozzles
         self.aperture_calibration = args.aperture_calibration
 
-# not quite sure if I need a shared namespace or a simple namespace will do.
-# if all the objects in the namespace are themselves shared, then a simple namespace should work.
-# if there are any non-shared objects (eg, integers or strings), then I must use a shared namespace?
-# you need the shared namespace if you're going to have a straight member, like the nozzle buttons time.
+# Please see long comments above about namespace.
+# especially regarding performance - avoid individual accesses (read or write)
         self.s = manager.Namespace()
         s = self.s
         s.apertures = manager.list( [0.0] * self.nozzles )
@@ -301,6 +318,12 @@ class LightCurveTransmitter:
 
         use_buttons = not self.state.args.nobuttons
 
+        # take a copy of the shared array for performance
+        nozzle_buttons = self.state.s.nozzle_buttons[:]
+        nozzle_buttons_1 = self.state.s.nozzle_buttons_1[:]
+        apertures = self.state.s.apertures[:]
+        solenoids = self.state.s.solenoids[:]
+
         for c in self.state.controllers:
 
             # allocate the packet TODO allocate a packet once
@@ -339,13 +362,13 @@ class LightCurveTransmitter:
                 # We could also build a more arbitrary one.
                 # also note that the button wants all the fire, so we have to also set the servo to 1.0
 
-                if use_buttons and ((self.state.s.nozzle_buttons[solenoid]) or (self.state.s.nozzle_buttons_1[solenoid])):
+                if use_buttons and ((nozzle_buttons[solenoid]) or (nozzle_buttons_1[solenoid])):
                     # print(f' firing logical {i} physical {solenoid} because button')
                     s = True
                     a = 1.0
                 else:
-                    s = self.state.s.solenoids[solenoid]
-                    a = self.state.s.apertures[aperture]
+                    s = solenoids[solenoid]
+                    a = apertures[aperture]
 
                 packet[ARTNET_HEADER_SIZE + (i*2) ] = s
 
@@ -474,6 +497,12 @@ class LightCurveStatusXmit:
         # build a data structure that has the info we'er interesting in
         # it would be good to round all the floats to save data
 
+        # take a copy of the shared array for performance
+        nozzle_buttons = self.state.s.nozzle_buttons[:]
+        nozzle_buttons_1 = self.state.s.nozzle_buttons_1[:]
+        apertures = self.state.s.apertures[:]
+        solenoids = self.state.s.solenoids[:]
+
         # THIS NEEDS TO BE MORE EFFICIENT!
 
         data = {
@@ -481,21 +510,27 @@ class LightCurveStatusXmit:
             "version": "1.0",
             "command_port": int(COMMAND_PORT),
             "uptime": round(time() - self.start_time,3), # don't take up too much bandwidth
-            "solenoids": self.state.s.solenoids[:], # take a copy for transmission
-            "apertures": [round(item,3) for item in self.state.s.apertures[:]],
-            "gyro": [round(item,3) for item in self.state.s.gyro[:]],
-            "rotation": [round(item,3) for item in self.state.s.rotation[:]],
-            "gravity": [round(item,3) for item in self.state.s.gravity[:]],
+            "solenoids": solenoids, # take a copy for transmission
+            "apertures": [round(item,3) for item in apertures],
+# save a little perf
+#            "gyro": [round(item,3) for item in self.state.s.gyro[:]],
+#            "rotation": [round(item,3) for item in self.state.s.rotation[:]],
+#            "gravity": [round(item,3) for item in self.state.s.gravity[:]],
             "seq": self.sequence # allows estimation of packet loss
         }
         self.sequence += 1
 
         # bad form. Should abstract out this instead of replicating it.
+        #if not self.state.args.nobuttons:
+        #    for n in range(self.state.args.nozzles):
+        #        if ((self.state.s.nozzle_buttons[n]) or (self.state.s.nozzle_buttons_1[n])):
+        #            data['solenoids'][n] = True
+
+        # bad form. Should abstract out this instead of replicating it.
         if not self.state.args.nobuttons:
             for n in range(self.state.args.nozzles):
-                if ((self.state.s.nozzle_buttons[n]) or (self.state.s.nozzle_buttons_1[n])):
+                if ((nozzle_buttons[n]) or (nozzle_buttons_1[n])):
                     data['solenoids'][n] = True
-
 
         # the separators command greatly decreases the size by removing unnecessary spaces
         # slightly better code would also round the values in floating point to only 2 figures,
@@ -506,7 +541,7 @@ class LightCurveStatusXmit:
 
         # todo: add the correct outbound address, which has to be looked up
         # and thus be on the right interface broadcast
-        print(f' sending status packets to: {self.address} {self.port} ')
+        # print(f' sending status packets to: {self.address} {self.port} ')
         self.sock.sendto(byte_data,(self.address,self.port))
 
 
@@ -522,9 +557,9 @@ def status_xmit_server(state: LightCurveState):
 
     # delay = 1.0 / state.args.fps
 
-    # it turns out we can't keep up 5 FPS on most machines! Trying 1 fps
+    # going to hardcode to 5 fps for now
+    delay = 1.0 / 5.0
 
-    delay = 1.0 
     # print(f'delay is {delay} fps is {xmit.fps}')
     try:
         while True:
@@ -532,14 +567,13 @@ def status_xmit_server(state: LightCurveState):
 
             xmit.transmit()
 
-            sleep(0.5)
-
-#            d = delay - (time() - t1)
-#            if (d > 0.002):
-#                sleep(d)
-#            else:
-#                print(f'status xmit server cant keep up: small pause anyway')
-#                sleep(0.5)
+            d = delay - (time() - t1)
+            if (d > 0.002):
+                print(f'* {d}')
+                sleep(d)
+            else:
+                print(f'status xmit server cant keep up: small pause anyway')
+                sleep(0.5)
 
 
     except KeyboardInterrupt:
