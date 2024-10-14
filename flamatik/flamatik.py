@@ -569,7 +569,6 @@ def status_xmit_server(state: LightCurveState):
 
             d = delay - (time() - t1)
             if (d > 0.002):
-                print(f'* {d}')
                 sleep(d)
             else:
                 print(f'status xmit server cant keep up: small pause anyway')
