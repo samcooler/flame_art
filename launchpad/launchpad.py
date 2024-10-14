@@ -682,7 +682,7 @@ class PatternMode(Mode):
             self.lpm.button_color_set('pad', be.row, be.column, self.lpm.colors['red']) # red
 
             # send the command to flamatik
-            print(f'changing pattern on Flamatik to {pattern_o['pattern']}')
+            print(f'changing pattern on Flamatik to {pattern_o["pattern"]}')
             self.patternChange(pattern_o)
 
         elif be.type == 'function':
