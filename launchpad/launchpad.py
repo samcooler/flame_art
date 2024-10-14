@@ -146,9 +146,9 @@ class FlamatikStatus():
             self.uptime = data.get("uptime",0.0)
             self.apertures = data["apertures"] if "apertures" in data else self.apertures
             self.solenoids = data["solenoids"] if "solenoids" in data else self.solenoids
-            self.gyro = data["gyro"] if "gyro" in data else self.gyro
-            self.rotation = data["rotation"] if "rotation" in data else self.rotation
-            self.gravity = data["gravity"] if "gravity" in data else self.gravity
+#            self.gyro = data["gyro"] if "gyro" in data else self.gyro
+#            self.rotation = data["rotation"] if "rotation" in data else self.rotation
+#            self.gravity = data["gravity"] if "gravity" in data else self.gravity
 
         except:
             print(f' received a status packet but missing a device specifier')
