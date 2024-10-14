@@ -1,0 +1,38 @@
+[
+    {
+        "name": "random_star_fade",
+        "repeat": 5
+    },
+    {
+        "name": "multiwave",
+        "duration": 20
+    },
+    {
+        "name": "random_star_poof",
+        "duration": 20
+    },
+
+    {
+        "name": "snake_retreat",
+        "duration": 10
+    },
+    {
+        "name": "random_star_with_opposites_fade",
+        "duration": 20
+    },
+    {
+        "name": "pulse",
+        "duration": 10
+    },
+    {
+        "name": "poof",
+	"delay": 1,
+        "duration": 10
+    },
+
+    {
+        "name": "random_equator_spin_poof",
+        "spins": 3,
+        "repeat": 1
+    }
+]
