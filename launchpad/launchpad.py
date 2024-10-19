@@ -611,7 +611,8 @@ class MomentaryMode(Mode):
 # When you get a button event, send a request to FLamatik
 
 class PatternMode(Mode):
-    def __init__(self, lpm: LaunchpadMiniMk2, status: FlamatikStatus):
+    def __init__(self, page, lpm: LaunchpadMiniMk2, status: FlamatikStatus):
+        self.page = page
         self.lpm = lpm
         self.status = status
         self.row = -1
@@ -658,7 +659,7 @@ class PatternMode(Mode):
 
             pattern_o = {}
             for p in self.patterns:
-                if (be.row == p['row']) and (be.column == p['column']):
+                if (self.page == p['page']) and (be.row == p['row']) and (be.column == p['column']):
                     pattern_o = p
                     break
                 # else:
@@ -835,7 +836,8 @@ def main():
     # create the modes and register them
     launchpad.mode_register( MomentaryMode(launchpad, osc_xmit), 0)
     launchpad.mode_register( LatchMode(launchpad, osc_xmit ), 1)
-    launchpad.mode_register( PatternMode(launchpad, flam), 2)
+    launchpad.mode_register( PatternMode(2, launchpad, flam), 2)
+    launchpad.mode_register( PatternMode(3, launchpad, flam), 3)
     launchpad.mode_set(0)
 
     # this is basically our event loop. Read from the device. Better if it
