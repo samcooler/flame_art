@@ -11,7 +11,7 @@ equator = g.equators[0]
 count = len(equator)
 poof_period = 1.0
 frames_per_period = 25
-min_aperture = 0.1
+min_aperture = 0.0
 max_aperture = 1.0
 aperture_range = max_aperture - min_aperture
 

@@ -12,7 +12,7 @@ equator = g.equators[0]
 count = len(equator)
 rotation_period = 2.0
 frames = 4 * count
-min_aperture = 0.1
+min_aperture = 0.0
 max_aperture = 1.0
 half_aperture_range = (max_aperture - min_aperture) / 2
 aperture_mean = min_aperture + half_aperture_range
@@ -31,6 +31,7 @@ def pattern_equator_wave(state: ft.LightCurveState) -> bool:
         rotation_progress = rotation_offset / frames
         for nozzle in equator:
             val = aperture_mean + half_aperture_range * cos((nozzle / count + rotation_progress) * tau)
+            val = max(0.0, val)
             # print(val) if nozzle == 10 else 0
             state.s.apertures[nozzle] = val
         sleep(rotation_period / frames)
