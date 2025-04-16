@@ -8,21 +8,24 @@ with 10 flame jets.
 
 It also can be used with the simulator.
 
-# use
+# Use
 
-## NOTE
+>
+>**NOTE**
+>
+>This is run in production with an auto start script.
+>
+>See the `pi_config` directory readme for how to start and stop in production using systemctl !
 
-This is run in production with an auto start script.
-
-See the `pi_config` directory readme for how to start and stop in production using systemctl !
-
-## installation
+## iInstallation
 
 Install a recent python. Tested with 3.12. Current Ubuntu python is 3.10, so tested there too (sam's laptop).
 
-There is a virtual environment checked in, which isn't good practice. It only works on Sam's laptop.
+There is a virtual environment checked in, which isn't good practice. The venv only works on Sam's laptop.
 
 The production Raspberry PI is a Pi 3B. It is running Raspberrian Bullseye. 
+
+Due to performance issues, I have also created a Pi 5 for testing. Please see further comments about performance.
 
 To built the python execution environment for a PI, I suggest running pyenv. https://github.com/pyenv/pyenv . This allows easy use of different python versions, then integrates well with `venv`. Basically:
 ```
@@ -37,7 +40,9 @@ sudo apt install build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-de
 pyenv install 3.12.5
 ```
 
-This install command takes A Very Long Time on a Pi 3B.
+It is also reasonable to set some of the higher performance python options, such as -O3, which are "distrusted" by python maintainres.
+
+This install command takes A Very Long Time on a Pi 3B
 
 Install the necessary python packages, although you also need cmake. 
 
@@ -50,6 +55,80 @@ pip install -r requirements.txt
 
 On windows, you may need to required the C++ build tools in order to get the tools `netifaces` requires. This can be done through `choco install visualcpp-build-tools` or by installing Visual Studio Code, and installing the C++ package, and correctly adding to path.
 
+# Architecture / operational reminder
+
+The Flamatik program is intended to be used with the flame_art controller. FLamatik sends packets
+to the different controllers, which have nozzles and solenoids, to make fire.
+
+**It is important to use the correct configuration file**. The sculpture will be "mapped" with particular
+outputs on particular physical addresses. If you need to remap the scupture and tune the continuous values,
+please check out the `lc_test` directory, which will allow you to specify the "raw" nozzle numbers
+and "raw" range values for mapping and tuning.
+
+Flamatik is part of several different programs. The simulator acts as a virtual controller,
+the launchpad code is for a specific model of midi controller, etc. Please see the readme in the
+project directory for a tour of all these programs.
+
+The code is meant to be run on a headless system, like a raspberry pi, with a captive network. Because 
+of the nature of the sculpture (free swinging), that is usually a wifi network. Broadcast is used over this
+network, and it is not connected to the internet.
+
+Flamatik has the idea of a pattern, which is a "user" written program which will send these control
+messages. These are written with an abstract map of nozzle numbers (see below) and with a range of 0.0 - 1.0
+for the continuous valves. Configuration here maps those abstract locations to physical controllers
+and offsets. There are usually 3 physical controllers on different IP addresses, so the mapping also
+has to build packets for each.
+
+There is also the idea of a "playlist", which is a list of patterns and their timing. This functionality is
+controlled by starting flamatik with a `-l` command and the playlist to run. These are written in json thus
+typically have a .json extension. See below for further info.
+
+There exists a listener for OSC control. This allows an outside element such as a MIDI controller
+or a strange stainless object to make poofs. OSC supports two basic commands: poof a nozzle, and change patterns.
+The "nozzle" function can be disabled, but is otherwise a hardcoded system. Eventually abstracting
+the "button" function to do other things than change pattern or fire poofer might be envisioned.
+
+Flamatik also outputs a status JSON. This is to drive things like lights on a midi controller, thus allowing
+the midi controller to represent what pattern is running, and what solenoids should be operating. 
+
+THere are specific options for the nozzle to apply a change to. These are "per pattern" and some patterns
+use some parameters, some don't. There's no real guide to this, you have to go read a pattern
+and see what it does. 
+
+# Basic operation
+
+You will probably need the following options:
+
+## -p PATTERN one of (currently):
+
+    aperture appoof comet equator_imu_ortho equator_imu_single equator_wave fast
+    group manual multiwave point_up poof pulse random_equator_spin_poof random_nozzle_poof
+    random_star_fade random_star_poof random_star_spin_poof random_star_with_opposites_fade
+    random_star_with_opposites_poof rings snake snake_retreat soliwave start stop test_equators
+    test_halos test_neighbors test_oppo
+
+There is actually some fairly fancy code that dynamically determins this based on the patterns in the directory. Also see pattern atlas in this directory.
+
+## -l PLAYLIST
+
+This takes a playlist file, instead of a single pattern. Some examples checked in include `playlist.json` and similar.
+
+## -a ADDRESS
+
+RARELY USED. Where to listen to OSC from controllers. Typically leave off to listen to broadcast.
+
+## -b BROADCAST
+
+RARELY USED. Send status to this broadcast address. 
+
+## -f FPS
+
+This is used more in debugging to tune the output.
+
+## pattern parameters
+
+There are a few parameters listed in the help file such as `nozzle` and `group`. All parameters that aren't
+otherwise known by flamatik are passed through to the pattern.
 
 # Patterns
 
