@@ -17,9 +17,11 @@ It also can be used with the simulator.
 >
 >See the `pi_config` directory readme for how to start and stop in production using systemctl !
 
-## iInstallation
+## Installation
 
-Install a recent python. Tested with 3.12. Current Ubuntu python is 3.10, so tested there too (sam's laptop).
+Install a recent python. Tested with 3.12. Current Ubuntu python is 3.10, so tested there too (sam's laptop). 3.13 may be troublesome, there appears to be an issue with `numpy` and 3.13 (issues compiling and a note from the
+AI there were reported issues). At least, there may be an issue with the older NumPy 1.x series. ( last time I tried to use the TOT numpy I had issues, not
+sure if it's still true ).
 
 There is a virtual environment checked in, which isn't good practice. The venv only works on Sam's laptop.
 
@@ -98,6 +100,11 @@ and see what it does.
 # Basic operation
 
 You will probably need the following options:
+
+## -c CONFIG
+
+This required parameter should match one of the config files. The two checked in
+are `lightcurve.cnf` for the one known sculpture in existance, and `sim.cnf`, for the simulator.
 
 ## -p PATTERN one of (currently):
 

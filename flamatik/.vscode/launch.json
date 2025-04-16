@@ -2,23 +2,31 @@
     // Use IntelliSense to learn about possible attributes.
     // Hover to view descriptions of existing attributes.
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    // NOTE:
+    // the way debugging works is to specify "debugpy" as the type of the launch.
+    // The "python" launch type is depricated, you are supposed to use tasks.
+    // For now Im going to just use python and see how debubing works in a bit.
+    //
+    // It appeasr that type-python doesn't work here anyway because the CWD isn't correct.
+    
+    // Also note: it might be nice to run things like "launchpad" and "sim" automatically.
+    // This is done by creating a "task" in "tasks.json" (launch sim), creating
+    // it as a background task, then including "preLaunchTask" in the launch config.
+    // At least, thats what chatgpt is telling me, havent tried it yet - BB
+    //
+    // sorry about the missing single quotes. JSONC doesnt support them so dont add them back.
+
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python Launch",
-            "type": "python",
-            "request": "launch",
-            "program": "${file}",
-            "console": "integratedTerminal",
-            "args": "${command:pickArgs}"
-        },
-        {
-            "name": "Python Debugger: Current File with Arguments",
+            "name": "Debugger: LC plus Playlist",
             "type": "debugpy",
             "request": "launch",
-            "program": "${file}",
+            "program": "flamatik.py",
+            "subProcess": true,
             "console": "integratedTerminal",
-            "args": "${command:pickArgs}"
+            "cwd": "${workspaceFolder}",
+            "args": ["-c", "lightcurve.cnf", "-l", "playlist.json"]
         }
     ]
 }
