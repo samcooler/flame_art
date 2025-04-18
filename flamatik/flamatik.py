@@ -365,9 +365,12 @@ class LightCurveTransmitter:
                 if use_buttons and ((nozzle_buttons[solenoid]) or (nozzle_buttons_1[solenoid])):
                     # print(f' firing logical {i} physical {solenoid} because button')
                     s = True
-                    a = 1.0
                 else:
                     s = solenoids[solenoid]
+
+                if use_buttons and ((nozzle_buttons[aperture]) or (nozzle_buttons_1[aperture])):
+                    a = 1.0
+                else:
                     a = apertures[aperture]
 
                 packet[ARTNET_HEADER_SIZE + (i*2) ] = s

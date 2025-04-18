@@ -7,6 +7,9 @@
 # lc_test is intended to send raw values for both
 # apertures and solenoids, to allow testing.
 
+# RAW VALUE is the uncalibrated 0 to 255. It still runs through the
+# mapping table!
+
 # while this can also be done with `flamatik`, at some point a
 # simple interface to do simple things is better.
 
@@ -14,7 +17,7 @@
 # this program runs all in one thread, doesn't have a plugin architecture,
 # doesn't listen for OSC, etc etc. Just sends artnet.
 
-# since we do want to have the `nozzel` configuration of the sculpture,
+# since we do want to have the `nozzle` configuration of the sculpture,
 # we do read the same configuration file.
 
 

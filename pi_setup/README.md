@@ -8,6 +8,8 @@ easier to understand 'dhcpcd' method of network configuration.
 Installed 32-bit legacy. This means it will NOT run chromatik. Chromatik requires Java 17 minimum,
 which also requires a 64-bit OS. That's fine we're not using Chromatik.
 
+NOTE: for RPI 5 had to install Bookworm, and probably installed 64-bit. See below for network configuration. **ALL OTHER CONFIGURATION THE SAME**.
+
 ## username password network
 
 Ethernet is configured for static IP address on 192.168.13, so we don't have to use
@@ -17,7 +19,7 @@ wifi more than we have to.
 `pi`
 `curvelight`
 
-This is configured as a pure static in `/etc/dhcpcd.conf` , and it is marked as nogateway, so the rpi will not try to use this for internet
+This is configured as a pure static in `/etc/dhcpcd.conf` , and it is marked as nogateway, so the rpi will not try to use this for internet (If RPI 5 config is from NM but otherwise same)
 
 ## internet
 
@@ -25,7 +27,7 @@ Use wifi for internet. Add access points to `/etc/wpa_supplicant.conf` .
 
 As a backup, there is an ssid configured, so you can set your phone to it. `light-internet` `curvelight` . 
 
-RPI only supports 2.4ghz so make sure whatever you have providing that ssid can provide 2.4ghz
+RPI only supports 2.4ghz so make sure whatever you have providing that ssid can provide 2.4ghz (not true with RPI 5 which does support 5ghz).
 
 ## Github
 
@@ -39,6 +41,10 @@ The general mojo is: `ssh-keygen -t ed25519 -C "your_email@example.com"` , then 
 
 ## installation
 
+NOTE: as of April 2025, the most recent python is 3.13, not 3.12. This appears incompatible
+with the python math library we use. Past attempts to use v2 of the math library didn't work.
+Therefore, stick with 3.12 unless you're willing to do some experimentation and update this guide.
+
 Of course ``
 
 Concerned about python version issues, so let's install pyenv.
@@ -50,7 +56,17 @@ Concerned about python version issues, so let's install pyenv.
 Add this to `.profile` : 
 ```
 export PYENV_ROOT="$HOME/.pyenv"
+export PATH="$PYENV_ROOT/bin:$PATH"
 [[ -d $PYENV_ROOT/bin ]] && export PATH="$PYENV_ROOT/bin:$PATH"
+eval "$(pyenv init -)"
+```
+
+NB: modern PYENV seems to be: not sure if it's that different
+
+```
+export PYENV_ROOT="$HOME/.pyenv"
+export PATH="$PYENV_ROOT/bin:$PATH"
+eval "$(pyenv init --path)"
 eval "$(pyenv init -)"
 ```
 
@@ -75,8 +91,8 @@ Copy `flamatik.service` and `launchpad.service` to `/etc/systemdsystem` (with su
 ```
 sudo cp flamatik.service /etc/systemd/system
 sudo cp launchpad.service /etc/systemd/system
-sudo cp systemctl enable flamatik.service
-sudo cp systemctl enable launchpad.service
+sudo systemctl enable flamatik.service
+sudo systemctl enable launchpad.service
 ```
 
 ## Manual control of autostart
@@ -105,4 +121,65 @@ To look at the output of a service:
 journalctl -u flamatik.service -r
 ```
 ( this prints the most recent at the top which is most useful)
+
+# RPI 5
+
+Due to performance issues, attempting all this with an RPI 5 instead of RPI 3a.
+
+## RPI 5 network config
+
+
+DO NOT ATTEMPT TO USE `systemd-networkd` . It's a stand-in you supposedly can install over, but we had problems on other installations where both were active and it was impossible to untangle.
+
+
+Network Manager is  `nmcli`. I have a document in google docs with a cheat sheet. Here's a summary.d
+
+### list interfaces
+
+`nmcli connection show` - [ this lists all - see name "Wired connection 1" and "preconfigured" ]
+
+### change connection name (wired connection 1 -> ethnet)
+
+```
+nmcli connection modify "Wired connection 1" connection.id "ethnet"
+```
+
+### static addressing
+
+```
+sudo nmcli connection modify <connection-name> ipv6.method "ignore"
+sudo nmcli connection modify "<connection-name>" ipv4.addresses "<ip-address>/<subnet-mask>"
+sudo nmcli connection modify "<connection-name>" ipv4.method "manual"
+sudo nmcli connection modify "<connection-name>" ipv4.ignore-auto-routes "yes" 
+```
+
+The last step is for a network connection with no route to internet, which is common. If you do have internet, set a dns server.
+
+```
+nmcli connection modify "<connection-name>" ipv4.dns "<dns-server>"
+```
+
+### adding a dhcp server
+
+SHORTCUT - you can also use 'rpi-config' but I think only the first one
+
+For a network you can see right now (likely everything requires sudo)
+
+```
+sudo nmcli device wifi list [ this lists what you are connected to ]
+sudo nmcli device wifi connect "SSID_NAME" password "PASSWORD"
+sudo nmcli device status
+sudo nmcli connection modify "SSID_NAME" connection.autoconnect yes
+```
+
+for a connection that's not currently available:
+```
+nmcli connection add type wifi ifname wlan0 con-name "SSID_NAME" ssid "SSID_NAME"
+nmcli connection modify "SSID_NAME" wifi-sec.key-mgmt wpa-psk
+nmcli connection modify "SSID_NAME" wifi-sec.psk "PASSWORD"
+nmcli connection modify "SSID_NAME" connection.autoconnect yes
+nmcli connection show
+```
+
+
 
