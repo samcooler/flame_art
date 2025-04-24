@@ -657,22 +657,24 @@ class PatternMode(Mode):
 
         if be.type == 'pad':
 
+            print(f' pad button pressed ')
+
             pattern_o = {}
             for p in self.patterns:
                 if (self.page == p['page']) and (be.row == p['row']) and (be.column == p['column']):
                     pattern_o = p
                     break
                 # else:
-                    # print(f' wrong pattern at {p["row"]} , {p["column"]}')
+                #     print(f' wrong pattern at {p["row"]} , {p["column"]}')
 
             # if there's no pattern registered here do nothing
             if len(pattern_o) == 0:
-                # print(f'no pattern registered at {be.row} and {be.column}')
+                print(f'no pattern registered at {be.row} and {be.column}')
                 return
 
             # unlight the old button
             if self.row >= 0:
-                        # print(f' latch second press pad turning off {be.row}, {be.column}')
+                print(f' latch second press pad turning off {be.row}, {be.column}')
                 self.lpm.button_color_set('pad', self.row, self.column, self.lpm.colors['off']) # black turn off
 
             self.row = be.row
