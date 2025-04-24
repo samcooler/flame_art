@@ -6,11 +6,12 @@ import flamatik as ft
 from time import sleep
 import face_groupings as g
 
-frame_delay = 0.15
 
 def pattern_rings(state: ft.LightCurveState) -> bool:
     state.fill_solenoids(0)
     state.fill_apertures(1.0)
+
+    frame_delay = 0.15
 
     if state.args.frame_delay is not None:
         frame_delay = state.args.frame_delay

@@ -6,12 +6,13 @@ import flamatik as ft
 from time import sleep
 import face_groupings as g
 
-frame_delay = 0.3
 
 def pattern_test_halos(state: ft.LightCurveState) -> bool:
     # Start
     state.fill_solenoids(0)
     state.fill_apertures(1.0)
+    
+    frame_delay = 0.3
 
     if state.args.frame_delay is not None:
         frame_delay = state.args.frame_delay
